@@ -144,3 +144,41 @@ For each future external comparison, record separately:
 3. differences in model, hardware, data, and protocol;
 4. whether the result replicated;
 5. limitations preventing direct comparison.
+## Historical Replay and Policy Improvement
+
+### Zheng et al. — Dream-RSI
+
+Source:
+https://arxiv.org/abs/2609.14858
+
+External finding:
+
+Dream-RSI studies exploration-policy improvement for autonomous agents. Its central mechanism uses accumulated historical discovery trees as a replay simulator, allowing candidate exploration policies to receive lower-cost offline feedback before improved policies are redeployed online.
+
+TEMPER relevance:
+
+The useful connection is not recursive self-improvement itself.
+
+TEMPER may later investigate whether preserved decision trajectories can support offline evaluation of alternative:
+
+- abstention thresholds;
+- verification policies;
+- escalation policies;
+- routing policies;
+- stopping policies.
+
+This could allow policy-level changes to be evaluated without repeating every expensive frontier-model call.
+
+Important limitation:
+
+Historical replay only supports counterfactual policy evaluation when the recorded trajectory contains the observations and outcomes needed by the candidate policy.
+
+A candidate policy that would have taken an unobserved action, invoked a model that was not originally called, or entered an unseen state cannot be evaluated faithfully from the trace without additional assumptions or simulation.
+
+TEMPER reproduction:
+
+Not yet.
+
+Current status:
+
+Research direction only. No implementation is admitted into P1.

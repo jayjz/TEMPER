@@ -168,3 +168,34 @@ Test explicitly:
 - tasks whose uncertainty cannot be reliably estimated.
 
 A useful theory must explain its own boundary conditions.
+## RQ14 — Historical Replay and Policy Evaluation
+
+Can preserved decision trajectories serve as an offline replay substrate for evaluating alternative abstention, verification, and escalation policies without repeating expensive model calls?
+
+The key distinction is between model improvement and policy improvement.
+
+A replay experiment should hold historical model outputs and observed outcomes fixed while varying only system policy, such as:
+
+- confidence thresholds;
+- abstention rules;
+- verification gates;
+- escalation policies;
+- stopping rules;
+- batching or scheduling policy.
+
+Candidate measurements include:
+
+- verified decision quality;
+- coverage;
+- selective risk;
+- frontier-call rate;
+- verification rate;
+- latency;
+- total declared cost;
+- cost per verified correct decision.
+
+Historical replay must not be treated as valid counterfactual evidence when the proposed policy would require observations or model outputs that were not recorded in the original trajectory.
+
+Replay therefore provides evidence only within the support of the preserved history.
+
+A future research question is whether offline replay can reduce the cost of evaluating policy changes while preserving enough fidelity to predict online system behavior.

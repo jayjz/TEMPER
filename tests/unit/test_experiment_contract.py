@@ -14,13 +14,15 @@ from temper.contracts import (
 def valid_manifest() -> ExperimentManifest:
     return ExperimentManifest(
         experiment_id="EXP-0001",
+        run_id="EXP-0001-B1-validation-seed-42",
         phase="P1",
         status="PLANNED",
         dataset=DatasetRef(
             name="CLINC150",
             version="full",
             source="UCI 570 / clinc/oos-eval",
-            sha256=None,
+            archive_sha256=None,
+            canonical_sha256=None,
             label_provenance="published benchmark labels",
         ),
         model=ModelRef(name="tfidf-logistic-regression"),
@@ -41,6 +43,7 @@ def valid_manifest() -> ExperimentManifest:
         calibration_method=None,
         threshold_selection=None,
         metrics=("macro_f1", "accuracy", "brier_score", "nll"),
+        runtime={"fit_seconds": 1.0},
         artifact_paths=(Path("experiments/EXP-0001"),),
         limitations=("CLINC150 is crowdsourced rather than production traffic.",),
     )

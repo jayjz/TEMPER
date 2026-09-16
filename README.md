@@ -361,7 +361,10 @@ No substantive model result is claimed by P0.
 
 ### EXP-0001 — Conventional Decision Baseline on CLINC150
 
-**Status: PLANNED**
+**Status: READY — reproducible acquisition, split freezing, and B0/B1 execution support are implemented; final frozen evaluation has not been run.**
+
+Prepare the canonical UCI download and immutable seed-42 split metadata with
+`uv run python experiments/EXP-0001/prepare.py`. Raw data is intentionally ignored by Git.
 
 The first experiment establishes how far conventional classification gets before TEMPER introduces calibration-aware training, abstention policies, model cascades, or frontier escalation.
 

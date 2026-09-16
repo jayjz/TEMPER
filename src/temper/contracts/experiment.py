@@ -22,7 +22,8 @@ class DatasetRef(BaseModel):
     name: str = Field(min_length=1)
     version: str = Field(min_length=1)
     source: str = Field(min_length=1)
-    sha256: str | None = None
+    archive_sha256: str | None = None
+    canonical_sha256: str | None = None
     label_provenance: str = Field(min_length=1)
 
 
@@ -47,6 +48,7 @@ class ExperimentManifest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     experiment_id: str = Field(pattern=r"^EXP-\d{4}$")
+    run_id: str = Field(min_length=1)
     phase: str = Field(min_length=1)
     status: ExperimentStatus
     git_commit: str | None = None
@@ -64,6 +66,7 @@ class ExperimentManifest(BaseModel):
     calibration_method: str | None = None
     threshold_selection: str | None = None
     metrics: tuple[str, ...]
+    runtime: dict[str, object] = Field(default_factory=dict)
     artifact_paths: tuple[Path, ...] = ()
     limitations: tuple[str, ...] = ()
     conclusion: str | None = None

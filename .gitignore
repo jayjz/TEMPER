@@ -105,6 +105,7 @@ datasets/cache/
 
 # Experiment artifacts
 experiments/**/artifacts/
+experiments/**/data/
 experiments/**/checkpoints/
 experiments/**/logs/
 experiments/**/predictions.parquet
