@@ -71,6 +71,50 @@ def validate_clinc150_payload(payload: object) -> dict[str, list[list[str]]]:
     return validated
 
 
+def _canonical_payload_bytes(payload: dict[str, list[list[str]]]) -> bytes:
+    return json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+
+
+def _try_validate_archive_member(
+    archive: zipfile.ZipFile, name: str
+) -> dict[str, list[list[str]]] | None:
+    """Return a schema-valid payload or None for an invalid lookalike member."""
+    try:
+        payload: Any = json.loads(archive.read(name).decode("utf-8"))
+        return validate_clinc150_payload(payload)
+    except (UnicodeDecodeError, TypeError, ValueError):
+        return None
+
+
+def _select_validated_clinc150_payload(archive: zipfile.ZipFile) -> dict[str, list[list[str]]]:
+    """Select the unique schema-valid CLINC150 payload from an archive.
+
+    Every member whose name ends with ``data_full.json`` is inspected. Invalid
+    lookalikes are rejected. Identical valid copies collapse to one canonical
+    payload. Distinct valid payloads fail closed. Selection never uses
+    first-match wins and does not depend on ZIP member order.
+    """
+    candidate_names = [name for name in archive.namelist() if name.endswith("data_full.json")]
+    if not candidate_names:
+        raise ValueError("CLINC150 archive must contain a data_full.json member")
+
+    unique_payloads: dict[str, dict[str, list[list[str]]]] = {}
+    for name in candidate_names:
+        payload = _try_validate_archive_member(archive, name)
+        if payload is None:
+            continue
+        digest = hashlib.sha256(_canonical_payload_bytes(payload)).hexdigest()
+        unique_payloads[digest] = payload
+
+    if not unique_payloads:
+        raise ValueError("CLINC150 archive contains no schema-valid data_full.json")
+    if len(unique_payloads) > 1:
+        raise ValueError(
+            "CLINC150 archive contains multiple distinct valid data_full.json payloads"
+        )
+    return next(iter(unique_payloads.values()))
+
+
 def acquire_clinc150(
     destination: Path, *, source_url: str = CLINC150_SOURCE_URL
 ) -> Clinc150Dataset:
@@ -94,17 +138,10 @@ def acquire_clinc150(
             temporary_path.unlink(missing_ok=True)
     try:
         with zipfile.ZipFile(archive_path) as archive:
-            candidates = [name for name in archive.namelist() if name.endswith("data_full.json")]
-            if len(candidates) != 1:
-                raise ValueError("CLINC150 archive must contain exactly one data_full.json")
-            with archive.open(candidates[0]) as source:
-                payload: Any = json.load(source)
+            validated_payload = _select_validated_clinc150_payload(archive)
     except zipfile.BadZipFile as error:
         raise ValueError("CLINC150 source archive is not a valid zip file") from error
-    validated_payload = validate_clinc150_payload(payload)
-    normalized_bytes = json.dumps(validated_payload, ensure_ascii=False, sort_keys=True).encode(
-        "utf-8"
-    )
+    normalized_bytes = _canonical_payload_bytes(validated_payload)
     dataset_path.write_bytes(normalized_bytes)
     return Clinc150Dataset(
         path=dataset_path,
