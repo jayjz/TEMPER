@@ -1,0 +1,174 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyd
+*.so
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Secrets / environment
+.env
+.env.*
+!.env.example
+*.secret
+*.secrets
+secrets/
+private/
+credentials*
+tokens*
+auth.json
+oauth*.json
+
+# Keys / certificates
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.crt
+*.cer
+*.der
+*.csr
+id_rsa*
+id_dsa*
+id_ecdsa*
+id_ed25519*
+.ssh/
+.gnupg/
+.netrc
+
+# Cloud / infrastructure credentials
+.aws/
+.azure/
+.gcloud/
+.config/gcloud/
+.kube/
+kubeconfig*
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+.vault_pass
+vault-password*
+
+# Databases
+*.db
+*.sqlite
+*.sqlite3
+*.duckdb
+
+# Model weights / checkpoints
+checkpoints/
+checkpoint/
+weights/
+models/local/
+models/cache/
+*.ckpt
+*.pt
+*.pth
+*.onnx
+*.gguf
+*.ggml
+*.safetensors
+
+# Hugging Face / ML caches
+.huggingface/
+hf_cache/
+transformers_cache/
+datasets_cache/
+wandb/
+mlruns/
+runs/
+lightning_logs/
+
+# Raw/private data
+data/raw/
+data/private/
+data/local/
+data/cache/
+datasets/raw/
+datasets/private/
+datasets/cache/
+
+# Experiment artifacts
+experiments/**/artifacts/
+experiments/**/checkpoints/
+experiments/**/logs/
+experiments/**/predictions.parquet
+
+# Security research artifacts
+*.pcap
+*.pcapng
+*.cap
+*.nessus
+*.har
+*.dmp
+*.dump
+*.mem
+*.vmem
+nmap-output/
+nmap-results/
+nuclei-output/
+ffuf-output/
+burp/
+.burp/
+.zap/
+loot/
+crashes/
+fuzz-output/
+malware/
+quarantine/
+
+# Repomix generated artifacts
+repomix-output.*
+repomix-output/
+repomix-outputs/
+.repomix/
+.repomix-cache/
+repomix-*.txt
+repomix-*.md
+repomix-*.xml
+repomix-*.json
+repomix-*.yaml
+repomix-*.yml
+*.repomix.txt
+*.repomix.md
+*.repomix.xml
+*.repomix.json
+!repomix.config.json
+
+# Logs / caches / temp
+*.log
+logs/
+.cache/
+tmp/
+temp/
+*.tmp
+*.bak
+
+# IDE / OS
+.vscode/
+.idea/
+*.code-workspace
+.DS_Store
+Thumbs.db
+desktop.ini
+.ipynb_checkpoints/
+# Secret scanning
+# Commit the reviewed .secrets.baseline.
+.secrets.baseline.local
+.gitleaks-cache/
+.trufflehog/
