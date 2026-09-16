@@ -38,6 +38,7 @@ def write_prediction_artifact(
     labels: NDArray[np.int64],
     predictions: NDArray[np.int64],
     probabilities: NDArray[np.float64],
+    class_labels: NDArray[np.str_],
     metrics: BaselineMetrics,
 ) -> None:
     """Atomically preserve raw evaluation outputs without overwriting prior runs."""
@@ -45,19 +46,32 @@ def write_prediction_artifact(
         raise FileExistsError(f"refusing to overwrite prediction artifact: {path}")
     if labels.shape != predictions.shape or probabilities.shape[0] != labels.size:
         raise ValueError("artifact labels, predictions, and probabilities must align")
+    if class_labels.ndim != 1 or class_labels.size != probabilities.shape[1]:
+        raise ValueError("class_labels must provide one label for each probability column")
+    if class_labels.size == 0 or len(set(class_labels.tolist())) != class_labels.size:
+        raise ValueError("class_labels must be non-empty and unique")
     path.parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(
         path,
         labels=labels,
         predictions=predictions,
         probabilities=probabilities,
+        class_labels=class_labels,
         metrics=json.dumps(asdict(metrics)),
     )
 
 
 def read_prediction_artifact(
     path: Path,
-) -> tuple[NDArray[np.int64], NDArray[np.int64], NDArray[np.float64], BaselineMetrics]:
+) -> tuple[
+    NDArray[np.int64], NDArray[np.int64], NDArray[np.float64], NDArray[np.str_], BaselineMetrics
+]:
     with np.load(path, allow_pickle=False) as artifact:
         metrics = BaselineMetrics(**json.loads(str(artifact["metrics"])))
-        return artifact["labels"], artifact["predictions"], artifact["probabilities"], metrics
+        return (
+            artifact["labels"],
+            artifact["predictions"],
+            artifact["probabilities"],
+            artifact["class_labels"],
+            metrics,
+        )

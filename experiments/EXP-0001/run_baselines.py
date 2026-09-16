@@ -13,6 +13,7 @@ import platform
 import subprocess
 import sys
 import time
+from collections import Counter
 from pathlib import Path
 
 import numpy as np
@@ -56,6 +57,65 @@ def _records(
     )
 
 
+def _validate_loaded_splits(splits: FrozenSplits, payload: dict[str, list[list[str]]]) -> None:
+    """Reject loaded metadata that violates the frozen EXP-0001 seed-42 split contract."""
+    if splits.seed != 42:
+        raise ValueError(f"EXP-0001 requires frozen split seed 42, found {splits.seed}")
+    expected_sizes = {
+        "train_indices": 15_000,
+        "validation_indices": 1_500,
+        "calibration_indices": 1_500,
+        "test_indices": 4_500,
+    }
+    for name, expected_size in expected_sizes.items():
+        indices = getattr(splits, name)
+        if len(indices) != expected_size:
+            raise ValueError(f"{name} has {len(indices)}, expected {expected_size}")
+
+    def require_exact_indices(name: str, indices: tuple[int, ...], expected_size: int) -> None:
+        expected = set(range(expected_size))
+        if set(indices) != expected or len(set(indices)) != len(indices):
+            raise ValueError(f"{name} must contain every official partition index exactly once")
+
+    require_exact_indices("train_indices", splits.train_indices, len(payload["train"]))
+    require_exact_indices("test_indices", splits.test_indices, len(payload["test"]))
+    validation_space = set(range(len(payload["val"])))
+    validation_indices = set(splits.validation_indices)
+    calibration_indices = set(splits.calibration_indices)
+    if not validation_indices <= validation_space or not calibration_indices <= validation_space:
+        raise ValueError("validation and calibration indices must be official-validation indices")
+    if validation_indices & calibration_indices:
+        raise ValueError("validation and calibration indices must be disjoint")
+    if validation_indices | calibration_indices != validation_space:
+        raise ValueError(
+            "validation and calibration indices must cover official validation exactly"
+        )
+    if len(validation_indices) != len(splits.validation_indices) or len(calibration_indices) != len(
+        splits.calibration_indices
+    ):
+        raise ValueError("validation and calibration indices must be unique")
+
+    validation_labels = [payload["val"][index][1] for index in splits.validation_indices]
+    calibration_labels = [payload["val"][index][1] for index in splits.calibration_indices]
+    expected_balance = {label: 10 for label in {record[1] for record in payload["val"]}}
+    if Counter(validation_labels) != expected_balance:
+        raise ValueError("validation indices must contain exactly 10 records from each class")
+    if Counter(calibration_labels) != expected_balance:
+        raise ValueError("calibration indices must contain exactly 10 records from each class")
+
+
+def _verify_b1_probability_class_order(
+    model: TfidfLogisticRegressionBaseline, n_classes: int
+) -> None:
+    expected = np.arange(n_classes, dtype=np.int64)
+    observed = np.asarray(model.classifier.classes_, dtype=np.int64)
+    if not np.array_equal(observed, expected):
+        raise ValueError(
+            "B1 probability columns do not correspond to canonical class IDs: "
+            f"expected {expected.tolist()}, observed {observed.tolist()}"
+        )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset", type=Path, required=True, help="validated data_full.json path")
@@ -70,6 +130,7 @@ def main() -> None:
     _verify_canonical_dataset(arguments.dataset, arguments.canonical_sha256)
     payload = validate_clinc150_payload(json.loads(arguments.dataset.read_text(encoding="utf-8")))
     splits = FrozenSplits.read(arguments.splits)
+    _validate_loaded_splits(splits, payload)
     labels = sorted({record[1] for record in payload["train"]})
     label_to_id = {label: index for index, label in enumerate(labels)}
     train_texts, train_labels = _records(payload["train"], splits.train_indices, label_to_id)
@@ -105,6 +166,8 @@ def main() -> None:
     fit_seconds = time.perf_counter() - started
     inference_started = time.perf_counter()
     probabilities = model.predict_proba(evaluation_texts)
+    if arguments.baseline == "B1":
+        _verify_b1_probability_class_order(model, len(labels))
     inference_seconds = time.perf_counter() - inference_started
     predictions = probabilities.argmax(axis=1).astype(np.int64)
     metrics = compute_baseline_metrics(evaluation_labels, predictions, probabilities)
@@ -119,6 +182,7 @@ def main() -> None:
         labels=evaluation_labels,
         predictions=predictions,
         probabilities=probabilities,
+        class_labels=np.asarray(labels),
         metrics=metrics,
     )
     manifest = ExperimentManifest(

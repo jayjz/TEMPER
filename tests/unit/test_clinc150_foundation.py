@@ -119,12 +119,18 @@ def test_prediction_artifact_round_trip_and_metric_integration(tmp_path: Path) -
     metrics = compute_baseline_metrics(labels, predictions, probabilities)
     path = tmp_path / "predictions.npz"
     write_prediction_artifact(
-        path, labels=labels, predictions=predictions, probabilities=probabilities, metrics=metrics
+        path,
+        labels=labels,
+        predictions=predictions,
+        probabilities=probabilities,
+        class_labels=np.array(["intent-a", "intent-b"]),
+        metrics=metrics,
     )
 
     restored = read_prediction_artifact(path)
     assert np.array_equal(restored[0], labels)
     assert np.array_equal(restored[1], predictions)
     assert np.array_equal(restored[2], probabilities)
-    assert restored[3] == metrics
+    assert restored[3].tolist() == ["intent-a", "intent-b"]
+    assert restored[4] == metrics
     assert metrics.accuracy == pytest.approx(1.0)
