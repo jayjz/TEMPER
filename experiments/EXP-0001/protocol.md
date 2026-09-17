@@ -1,6 +1,6 @@
 # EXP-0001 — Conventional Decision Baseline on CLINC150
 
-Status: RUNNING
+Status: COMPLETE
 
 ## Research Question
 
@@ -169,3 +169,13 @@ EXP-0001 is complete when:
 6. metrics are recorded;
 7. no final-test tuning occurred;
 8. limitations and errors are documented.
+
+## Result Record
+
+See [EXP-0001 B2 Validation Result](../../docs/results/EXP-0001-B2-validation-2026-09-17.md).
+
+- B0, B1, and B2 validation completed.
+- B2 completed all three frozen seeds: 13, 21, and 37.
+- The calibration partition was unused; no calibration fit or threshold selection occurred.
+- The final-test partition remains untouched.
+- This result establishes a conventional validation baseline only; it makes no OOD, calibration, abstention, systems-efficiency, or TEMPER systems-thesis claim.
