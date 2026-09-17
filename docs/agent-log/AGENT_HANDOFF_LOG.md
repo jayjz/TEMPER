@@ -173,3 +173,69 @@ This turn does not select the B2 model, choose the seed set, or change dependenc
 B2 model/config/seed freeze and implementation planning.
 
 Not B2 execution yet.
+
+---
+
+## 2026-09-17T00:29:01Z
+
+- agent/model = Grok
+- branch = `feat/exp-0001-b2-encoder`
+- base commit = `d4cf036244607ab4f88a7c880628f1a046bf8f5f`
+- head at start of this turn = `a1146124fa0941c46316730f4185a04c74b036e8`
+- objective = Freeze the EXP-0001 B2 neural-baseline design so a later implementation run cannot make new scientific choices. Planning/config-freeze only.
+
+This planning run produced no new model evidence.
+
+### Freeze summary
+
+- encoder = `google-bert/bert-base-uncased`
+- immutable revision = `86b5e0934494bd15c9632b12f734a8a67f723594`
+- tokenizer = same id and revision
+- objective = multiclass cross-entropy, 150 in-scope classes, `[CLS]` linear head
+- max_length = 128; batch size = 16; lr = 2e-5; weight decay = 0.01; epochs = 3
+- optimizer = AdamW; scheduler = linear; warmup_ratio = 0.1; max_grad_norm = 1.0
+- no early stopping; use final-epoch weights
+- predeclared seeds = 13, 21, 37
+- data = official train 15000 + frozen seed-42 validation 1500; calibration and test unused
+
+### Status reconciliation performed
+
+None. Registry/protocol already RUNNING. README not edited.
+
+### Files changed
+
+- `docs/exec-plans/active/EXP-0001-B2-FREEZE.md` (created)
+- `docs/agent-log/AGENT_HANDOFF_LOG.md` (appended)
+
+### Evidence durability observations
+
+Unchanged from the previous entry: B0/B1 manifests and raw predictions are still not in Git. This freeze specifies the minimum B2 artifact set and recommends (not as policy) that manifests/prediction `.npz` are small enough for later Git inclusion while fine-tuned weights stay outside Git. No artifacts were uploaded or committed.
+
+### B2 pre-flight constraints
+
+Recorded in the freeze document, including encoder pin, seeds, hardware metadata contract, no calibration, no final-test, no best-seed headline, and no claim that raw softmax is calibrated.
+
+### EXP-0001 completion-contract observation
+
+B2 is optional for EXP-0001 completion under the current protocol (completion criteria name B0 and B1, not B2; neural baseline is not required for the first executable pass if heavyweight ML dependencies have not been admitted). Residual ambiguity with P1 roadmap encoder-baseline language. No protocol amendment made.
+
+### Checks run
+
+- `git status --short --branch`
+- `git diff --check`
+- inspected the complete diff
+- confirmed no source code, dependency, experiment-output, or source-of-truth research-contract changes
+
+### Limitations
+
+- No B0/B1/B2 execution.
+- No calibration or final-test access.
+- RTX 4060 fit is an engineering expectation, not a measured profile from this machine.
+- Hugging Face revision SHA was fetched from the Hub API on 2026-09-17; implementation must pin that SHA rather than `main`.
+- Could not inspect operator-local GPU identity.
+
+### Next handoff
+
+B2 implementation against `docs/exec-plans/active/EXP-0001-B2-FREEZE.md`.
+
+Not a new scientific choice. Not B2 execution in this turn.
