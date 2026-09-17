@@ -239,3 +239,114 @@ B2 is optional for EXP-0001 completion under the current protocol (completion cr
 B2 implementation against `docs/exec-plans/active/EXP-0001-B2-FREEZE.md`.
 
 Not a new scientific choice. Not B2 execution in this turn.
+
+---
+
+## 2026-09-17T00:54:39Z
+
+- agent/model = Grok
+- branch = `feat/exp-0001-b2-encoder`
+- starting commit = `af379c53d1e8c78a278e9302f48cd996026ae5a9`
+- objective = Implement EXP-0001 B2 exactly as frozen. Make B2 runnable and evidence-producing without new scientific choices. Execute validation-only training only if hardware satisfies the freeze without modification.
+
+This turn is an implementation record. It is not a B2 research result.
+
+### Status labels
+
+- IMPLEMENTED: frozen B2 training/eval path, CLI, unit tests, torch+transformers admission.
+- OBSERVED: this sandbox has no CUDA, 3.838 GB RAM, 2 CPUs; `torch.cuda.is_available() is False`.
+- UNVERIFIED: B2 validation metrics; Hub fetch of the pinned BERT revision on the operator GPU machine; whether batch 16 / max_length 128 / fp16 fits the operator 4060-class GPU; operator-local B0/B1 artifacts.
+
+### Implementation summary
+
+Added an explicit PyTorch loop for `google-bert/bert-base-uncased` revision `86b5e0934494bd15c9632b12f734a8a67f723594`. No Hugging Face Trainer, accelerate, datasets, or Lightning.
+
+Frozen values encoded as constants: max_length 128, batch 16, lr 2e-5, weight decay 0.01, epochs 3, AdamW, linear warmup 0.1, grad clip 1.0, seeds `{13, 21, 37}`, validation partition only. CUDA uses fp16 autocast; CPU uses fp32. OOM fails closed and does not change batch/sequence/precision.
+
+`run_b2.py` verifies the canonical dataset hash, validates the frozen seed-42 split, trains on official train (15000), evaluates frozen validation (1500), and writes seed-specific npz+json. There is no `--partition` flag. Calibration and official test examples are not bound into B2 tensors. Split-contract validation still checks index disjointness, including calibration/test index identity, without using those examples for fit or metrics.
+
+Overwrite of an existing seed artifact or manifest is refused before dataset load. Fine-tuned weights are not written.
+
+### Dependencies admitted
+
+Direct (`pyproject.toml`):
+
+- `torch>=2.4` (lock: `torch==2.14.0`)
+- `transformers>=4.45` (lock: `transformers==5.17.0`)
+
+Transitive, not requested: `huggingface-hub==1.31.0`, `tokenizers==0.23.2`, `safetensors==0.8.0`, plus Linux-marker NVIDIA CUDA wheel libs from the torch CUDA build. `accelerate`, `datasets`, and Lightning remain absent.
+
+### Files changed
+
+- `src/temper/baselines/encoder.py` (created)
+- `src/temper/baselines/__init__.py`
+- `src/temper/datasets/splits.py` (`validate_exp0001_splits` extracted)
+- `src/temper/datasets/__init__.py`
+- `experiments/EXP-0001/run_b2.py` (created)
+- `experiments/EXP-0001/run_baselines.py` (thin wrapper over shared split validator)
+- `tests/unit/test_b2_encoder.py` (created)
+- `pyproject.toml`
+- `uv.lock`
+- `README.md` (factual: B2 implemented; validation execution pending freeze-satisfying hardware; `run_b2.py` command)
+- `docs/agent-log/AGENT_HANDOFF_LOG.md` (appended)
+
+Unchanged source-of-truth:
+
+- `docs/THESIS.md`, `docs/ROADMAP.md`, `docs/EVALUATION_PROTOCOL.md`, `docs/EVIDENCE_POLICY.md`, `docs/RESEARCH_QUESTIONS.md`, `docs/EXPERIMENT_REGISTRY.md`, `docs/adr/*`
+- `experiments/EXP-0001/protocol.md`
+- `docs/exec-plans/active/EXP-0001-B2-FREEZE.md`
+- `experiments/EXP-0001/splits/clinc150-full-seed-42.json`
+
+### Tests added
+
+`tests/unit/test_b2_encoder.py` (15 tests). BERT is not downloaded. Coverage: pinned revision, allowed seeds, rejected calibration/test partitions, canonical class order, probability-column identity, seed-specific artifact names, overwrite refusal, frozen config serialization, hardware snapshot serialization, aggregate mean/std without best-seed selection, tiny fake-encoder loop, CLI has no test-partition option, shared split validator.
+
+### Quality gates
+
+All passed:
+
+- `uv run pytest` — 54 passed
+- `uv run ruff check .`
+- `uv run ruff format --check .`
+- `uv run mypy src`
+- `uv run bandit -r src` — no issues
+- `uv run pip-audit` — no known vulnerabilities
+- `git diff --check`
+
+### Hardware observed
+
+- platform: Linux-6.12.8+-x86_64-with-glibc2.36
+- CPU: Intel(R) Xeon(R) Platinum 8481C CPU @ 2.70GHz (2 cores)
+- GPU: none (`nvidia-smi` unavailable)
+- RAM: 3.838 GB
+- `torch==2.14.0+cu130`, `torch.cuda.is_available() is False`
+- Python 3.12.14
+
+This machine does not satisfy the freeze's 4060-class 8 GB CUDA assumption. Frozen batch/seq/precision were not modified.
+
+### Whether execution occurred
+
+No. B2 validation training/evaluation was not attempted. Seeds 13, 21, and 37 have no observed metrics.
+
+### Artifact paths
+
+None generated. No `experiments/EXP-0001/data/` or `experiments/EXP-0001/output/` in this workspace. Intended paths after a later authorized run:
+
+- `output/results/EXP-0001-B2-validation-seed-{13,21,37}.npz`
+- `output/manifests/EXP-0001-B2-validation-seed-{13,21,37}.json`
+- `output/manifests/EXP-0001-B2-validation-aggregate.json`
+
+`.gitignore` still does not ignore `experiments/**/output/`. Fine-tuned weights stay outside Git (`*.pt`, `*.pth`, `*.safetensors`, `checkpoints/`). Artifact-durability policy remains unresolved; this turn does not commit generated evidence.
+
+### Limitations
+
+- Implementation is not a measured B2 result.
+- CPU execution, if later forced, is not a headline GPU comparison under the freeze.
+- GPU runs are not claimed bit-identical.
+- Raw softmax is not calibrated.
+- B0/B1 GitHub durability gap is unchanged.
+- Linux torch lock pulls CUDA NVIDIA transitives; that does not mean CUDA is available here.
+
+### Next handoff
+
+Run frozen B2 validation on hardware that satisfies the freeze without changing batch size, max length, precision, model, seeds, or splits. Preserve all three seeds. Do not access calibration or final test. Then independent Codex review of this implementation. Do not merge.

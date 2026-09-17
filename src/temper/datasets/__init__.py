@@ -6,7 +6,7 @@ from temper.datasets.clinc150 import (
     acquire_clinc150,
     validate_clinc150_payload,
 )
-from temper.datasets.splits import FrozenSplits, freeze_clinc150_splits
+from temper.datasets.splits import FrozenSplits, freeze_clinc150_splits, validate_exp0001_splits
 
 __all__ = [
     "CLINC150_SOURCE_URL",
@@ -15,4 +15,5 @@ __all__ = [
     "acquire_clinc150",
     "freeze_clinc150_splits",
     "validate_clinc150_payload",
+    "validate_exp0001_splits",
 ]

@@ -10,6 +10,8 @@ dependencies = [
     "pydantic>=2.9",
     "pyyaml>=6.0",
     "scikit-learn>=1.5",
+    "torch>=2.4",
+    "transformers>=4.45",
 ]
 
 [dependency-groups]
@@ -50,7 +52,7 @@ warn_unused_configs = true
 show_error_codes = true
 
 [[tool.mypy.overrides]]
-module = ["sklearn.*"]
+module = ["sklearn.*", "torch.*", "transformers.*", "tokenizers.*"]
 ignore_missing_imports = true
 
 [tool.bandit]

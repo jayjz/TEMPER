@@ -13,7 +13,7 @@ The project focuses on the system around the model—not benchmark accuracy alon
 Its central question is whether **specialization + calibrated abstention + independent verification + selective escalation** can lower cost and latency without sacrificing verified system-level reliability.
 
 > **Research status:** P0 research foundation complete; P1 single-task baseline running.
-> **Current experiment:** EXP-0001 — conventional decision baselines on CLINC150. B0/B1 validation executed; B2 is the next implementation target.
+> **Current experiment:** EXP-0001 — conventional decision baselines on CLINC150. B0/B1 validation executed; B2 encoder implemented, validation execution pending freeze-satisfying hardware.
 > **Thesis status:** hypothesis under investigation; not established. No TEMPER systems-thesis claim is supported yet.
 
 ---
@@ -372,7 +372,7 @@ Observed so far:
 
 Not yet done:
 
-* B2 (small bidirectional encoder) is the next implementation target and has not been evaluated;
+* B2 (small bidirectional encoder) implementation exists; validation execution has not been observed on freeze-satisfying hardware;
 * calibration has not been fitted;
 * no threshold has been selected;
 * final-test evaluation has not occurred.
@@ -387,10 +387,13 @@ B0/B1 validation evidence does not support a TEMPER systems-thesis claim.
 
 **Status: RUNNING**
 
-B0 and B1 have been executed on the frozen validation partition. B2 is the next implementation target. Final-test evaluation has not occurred. Calibration has not been fitted.
+B0 and B1 have been executed on the frozen validation partition. B2 is implemented from the frozen encoder plan; its validation runs are not observed in this documentation turn. Final-test evaluation has not occurred. Calibration has not been fitted.
 
 Prepare the canonical UCI download and immutable seed-42 split metadata with
 `uv run python experiments/EXP-0001/prepare.py`. Raw data is intentionally ignored by Git.
+
+Run one frozen B2 validation seed (13, 21, or 37) with
+`uv run python experiments/EXP-0001/run_b2.py`. That command has no test-partition option.
 
 The first experiment establishes how far conventional classification gets before TEMPER introduces calibration-aware training, abstention policies, model cascades, or frontier escalation.
 
@@ -631,6 +634,8 @@ TEMPER/
 ├── experiments/
 │   └── EXP-0001/
 │       ├── protocol.md
+│       ├── run_baselines.py
+│       ├── run_b2.py
 │       └── splits/
 │
 ├── src/
