@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -11,6 +12,7 @@ from numpy.typing import NDArray
 from sklearn.metrics import accuracy_score, f1_score
 
 from temper.evaluation.metrics import multiclass_brier_score, negative_log_likelihood
+from temper.evidence import write_bytes_atomic
 
 
 @dataclass(frozen=True)
@@ -50,15 +52,16 @@ def write_prediction_artifact(
         raise ValueError("class_labels must provide one label for each probability column")
     if class_labels.size == 0 or len(set(class_labels.tolist())) != class_labels.size:
         raise ValueError("class_labels must be non-empty and unique")
-    path.parent.mkdir(parents=True, exist_ok=True)
+    buffer = io.BytesIO()
     np.savez_compressed(
-        path,
+        buffer,
         labels=labels,
         predictions=predictions,
         probabilities=probabilities,
         class_labels=class_labels,
         metrics=json.dumps(asdict(metrics)),
     )
+    write_bytes_atomic(path, buffer.getvalue())
 
 
 def read_prediction_artifact(

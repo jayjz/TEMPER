@@ -8,7 +8,7 @@ Raw experiment artifacts belong under `experiments/`.
 
 | ID | Phase | Question | Status | Result |
 |---|---|---|---|---|
-| EXP-0001 | P1 | CLINC150 conventional decision baseline | PLANNED | - |
+| EXP-0001 | P1 | CLINC150 conventional decision baseline | RUNNING | - |
 | EXP-0002 | P2 | Temperature scaling vs raw probabilities | PLANNED | - |
 | EXP-0003 | P2 | Cross-entropy vs Brier-oriented training | PLANNED | - |
 | EXP-0004 | P3 | Risk-coverage and abstention | PLANNED | - |

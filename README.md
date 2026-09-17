@@ -1,6 +1,6 @@
 # TEMPER
 
-[![Research Status](https://img.shields.io/badge/research-P0%20complete-2ea44f)](#current-status)
+[![Research Status](https://img.shields.io/badge/research-P1%20running-yellow)](#current-status)
 [![Python](https://img.shields.io/badge/python-3.12-3776AB?logo=python\&logoColor=white)](https://www.python.org/)
 [![Environment](https://img.shields.io/badge/environment-uv-DE5FE9)](https://docs.astral.sh/uv/)
 [![Research](https://img.shields.io/badge/type-experimental%20research-6f42c1)](#research-scope)
@@ -12,9 +12,9 @@ The project focuses on the system around the model—not benchmark accuracy alon
 
 Its central question is whether **specialization + calibrated abstention + independent verification + selective escalation** can lower cost and latency without sacrificing verified system-level reliability.
 
-> **Research status:** P0 research foundation complete.
-> **Current experiment:** EXP-0001 — conventional decision baselines on CLINC150.
-> **Thesis status:** hypothesis under investigation; not established.
+> **Research status:** P0 research foundation complete; P1 single-task baseline running.
+> **Current experiment:** EXP-0001 — conventional decision baselines on CLINC150. B0/B1 validation executed; B2 encoder implemented, validation execution pending freeze-satisfying hardware.
+> **Thesis status:** hypothesis under investigation; not established. No TEMPER systems-thesis claim is supported yet.
 
 ---
 
@@ -357,14 +357,47 @@ No substantive model result is claimed by P0.
 
 ---
 
+### P1 — Single-Task Baseline
+
+**Status: RUNNING**
+
+EXP-0001 is running on CLINC150.
+
+Observed so far:
+
+* dataset acquisition is reproducible;
+* the seed-42 split is frozen;
+* B0 (majority baseline) validation has been executed;
+* B1 (TF-IDF + logistic regression) validation has been executed.
+
+Not yet done:
+
+* B2 (small bidirectional encoder) implementation exists; validation execution has not been observed on freeze-satisfying hardware;
+* calibration has not been fitted;
+* no threshold has been selected;
+* final-test evaluation has not occurred.
+
+B0/B1 validation evidence does not support a TEMPER systems-thesis claim.
+
+---
+
 ## Current Experiment
 
 ### EXP-0001 — Conventional Decision Baseline on CLINC150
 
-**Status: READY — reproducible acquisition, split freezing, and B0/B1 execution support are implemented; final frozen evaluation has not been run.**
+**Status: RUNNING**
+
+B0 and B1 have been executed on the frozen validation partition. B2 is implemented from the frozen encoder plan; its validation runs are not observed in this documentation turn. Final-test evaluation has not occurred. Calibration has not been fitted.
 
 Prepare the canonical UCI download and immutable seed-42 split metadata with
 `uv run python experiments/EXP-0001/prepare.py`. Raw data is intentionally ignored by Git.
+
+Run one frozen B2 validation seed (13, 21, or 37) with
+`uv run python experiments/EXP-0001/run_b2.py`. That command has no test-partition option
+and does not accept a caller-supplied dataset hash; it verifies the frozen EXP-0001
+canonical SHA-256 before loading the encoder. Official B2 evidence must be written
+outside the repository so later seeds still see a clean source tree, for example
+`--output C:\Users\jcoul\Desktop\TEMPER-EVIDENCE\EXP-0001`.
 
 The first experiment establishes how far conventional classification gets before TEMPER introduces calibration-aware training, abstention policies, model cascades, or frontier escalation.
 
@@ -409,6 +442,34 @@ The final test split is not used for:
 * calibration fitting;
 * threshold selection.
 
+### Observed B0/B1 validation evidence
+
+These measurements are **validation-partition results**. They are not final-test results. They are not calibrated probabilities. They do not measure OOD performance, selective-automation reliability, encoder or frontier superiority, CPVCD, or the TEMPER systems thesis.
+
+Observed dataset provenance:
+
+* `archive_sha256`: `0d8ecc3e1edd7b25cabde0177544ce536ddf773844bc80ef1a75f36e7f030ea2`
+* `canonical_sha256`: `fb3217519e3c601c7a9b019dfd6744bed8f2564833e2b7eac4a406cacb462489`
+* frozen split: `experiments/EXP-0001/splits/clinc150-full-seed-42.json`
+* seed = 42
+* train = 15,000
+* validation = 1,500
+* calibration = 1,500
+* test = 4,500
+* B0/B1 producer revision: `d4cf036244607ab4f88a7c880628f1a046bf8f5f`
+
+| Baseline | Partition | n | accuracy | macro F1 | NLL | multiclass Brier |
+| -------- | --------- | - | -------- | -------- | --- | ---------------- |
+| B0 majority | validation | 1,500 | 0.006666666666666667 | 8.830022075055188e-05 | 27.446814308489024 | 1.9866666666666666 |
+| B1 TF-IDF + logistic regression | validation | 1,500 | 0.8873333333333333 | 0.8863992084286425 | 1.07091089590222 | 0.36105027523628147 |
+
+Observed B1 runtime on the same validation partition (`n_examples = 1500`):
+
+* `fit_seconds` = 2.442327100000057
+* `inference_seconds` = 0.009108400000059191
+
+B2 has not been implemented or evaluated.
+
 ---
 
 ## Why CLINC150?
@@ -439,7 +500,7 @@ See:
 ```mermaid
 flowchart TD
     P0[P0\nResearch Foundation\nCOMPLETE]
-    P1[P1\nSingle-Task Baseline]
+    P1[P1\nSingle-Task Baseline\nRUNNING]
     P2[P2\nCalibration Study]
     P3[P3\nSelective Prediction]
     P4[P4\nCascade Economics]
@@ -561,6 +622,7 @@ The project deliberately starts smaller.
 TEMPER/
 ├── docs/
 │   ├── adr/
+│   ├── agent-log/
 │   ├── exec-plans/
 │   │   ├── active/
 │   │   └── completed/
@@ -575,7 +637,10 @@ TEMPER/
 │
 ├── experiments/
 │   └── EXP-0001/
-│       └── protocol.md
+│       ├── protocol.md
+│       ├── run_baselines.py
+│       ├── run_b2.py
+│       └── splits/
 │
 ├── src/
 │   └── temper/
@@ -686,6 +751,7 @@ Core research documents:
 | [`docs/EXPERIMENT_REGISTRY.md`](docs/EXPERIMENT_REGISTRY.md)                 | Durable experiment index               |
 | [`docs/research/EXTERNAL_BASELINES.md`](docs/research/EXTERNAL_BASELINES.md) | External literature and claims         |
 | [`experiments/EXP-0001/protocol.md`](experiments/EXP-0001/protocol.md)       | Current experiment protocol            |
+| [`docs/agent-log/AGENT_HANDOFF_LOG.md`](docs/agent-log/AGENT_HANDOFF_LOG.md) | Operational agent handoff log          |
 | [`AGENTS.md`](AGENTS.md)                                                     | Repository engineering instructions    |
 
 ---
@@ -703,7 +769,7 @@ Suggested GitHub topics:
 | Phase                                  | Status       |
 | -------------------------------------- | ------------ |
 | P0 — Research Foundation               | **Complete** |
-| P1 — Single-Task Baseline              | **Next**     |
+| P1 — Single-Task Baseline              | **Running**  |
 | P2 — Calibration Study                 | Planned      |
 | P3 — Selective Prediction              | Planned      |
 | P4 — Cascade Economics                 | Planned      |

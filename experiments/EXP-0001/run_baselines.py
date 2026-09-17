@@ -7,21 +7,28 @@ an explicit invocation and this script has no tuning or selection behavior.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import platform
 import subprocess
 import sys
 import time
-from collections import Counter
 from pathlib import Path
 
 import numpy as np
 
 from temper.baselines import MajorityBaseline, TfidfLogisticRegressionBaseline
 from temper.contracts import DatasetRef, ExperimentManifest, HardwareRef, ModelRef
-from temper.datasets import FrozenSplits, validate_clinc150_payload
+from temper.datasets import (
+    EXP0001_ARCHIVE_SHA256,
+    EXP0001_CANONICAL_SHA256,
+    FrozenSplits,
+    validate_clinc150_payload,
+    validate_exp0001_splits,
+    verify_exp0001_archive_claim,
+    verify_exp0001_canonical_dataset,
+)
 from temper.evaluation import compute_baseline_metrics, write_prediction_artifact
+from temper.evidence import sha256_file
 
 
 def _git_commit() -> str | None:
@@ -32,20 +39,11 @@ def _git_commit() -> str | None:
 
 
 def _hash_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+    return sha256_file(path)
 
 
-def _verify_canonical_dataset(dataset_path: Path, canonical_sha256: str) -> None:
-    observed_sha256 = _hash_file(dataset_path)
-    if observed_sha256 != canonical_sha256:
-        raise ValueError(
-            "dataset SHA-256 does not match --canonical-sha256: "
-            f"expected {canonical_sha256}, observed {observed_sha256}"
-        )
+def _verify_canonical_dataset(dataset_path: Path, canonical_sha256: str) -> str:
+    return verify_exp0001_canonical_dataset(dataset_path, claimed_canonical=canonical_sha256)
 
 
 def _records(
@@ -59,49 +57,7 @@ def _records(
 
 def _validate_loaded_splits(splits: FrozenSplits, payload: dict[str, list[list[str]]]) -> None:
     """Reject loaded metadata that violates the frozen EXP-0001 seed-42 split contract."""
-    if splits.seed != 42:
-        raise ValueError(f"EXP-0001 requires frozen split seed 42, found {splits.seed}")
-    expected_sizes = {
-        "train_indices": 15_000,
-        "validation_indices": 1_500,
-        "calibration_indices": 1_500,
-        "test_indices": 4_500,
-    }
-    for name, expected_size in expected_sizes.items():
-        indices = getattr(splits, name)
-        if len(indices) != expected_size:
-            raise ValueError(f"{name} has {len(indices)}, expected {expected_size}")
-
-    def require_exact_indices(name: str, indices: tuple[int, ...], expected_size: int) -> None:
-        expected = set(range(expected_size))
-        if set(indices) != expected or len(set(indices)) != len(indices):
-            raise ValueError(f"{name} must contain every official partition index exactly once")
-
-    require_exact_indices("train_indices", splits.train_indices, len(payload["train"]))
-    require_exact_indices("test_indices", splits.test_indices, len(payload["test"]))
-    validation_space = set(range(len(payload["val"])))
-    validation_indices = set(splits.validation_indices)
-    calibration_indices = set(splits.calibration_indices)
-    if not validation_indices <= validation_space or not calibration_indices <= validation_space:
-        raise ValueError("validation and calibration indices must be official-validation indices")
-    if validation_indices & calibration_indices:
-        raise ValueError("validation and calibration indices must be disjoint")
-    if validation_indices | calibration_indices != validation_space:
-        raise ValueError(
-            "validation and calibration indices must cover official validation exactly"
-        )
-    if len(validation_indices) != len(splits.validation_indices) or len(calibration_indices) != len(
-        splits.calibration_indices
-    ):
-        raise ValueError("validation and calibration indices must be unique")
-
-    validation_labels = [payload["val"][index][1] for index in splits.validation_indices]
-    calibration_labels = [payload["val"][index][1] for index in splits.calibration_indices]
-    expected_balance = {label: 10 for label in {record[1] for record in payload["val"]}}
-    if Counter(validation_labels) != expected_balance:
-        raise ValueError("validation indices must contain exactly 10 records from each class")
-    if Counter(calibration_labels) != expected_balance:
-        raise ValueError("calibration indices must contain exactly 10 records from each class")
+    validate_exp0001_splits(splits, payload)
 
 
 def _verify_b1_probability_class_order(
@@ -127,6 +83,7 @@ def main() -> None:
     parser.add_argument("--partition", choices=("validation", "test"), default="validation")
     arguments = parser.parse_args()
 
+    verify_exp0001_archive_claim(arguments.archive_sha256)
     _verify_canonical_dataset(arguments.dataset, arguments.canonical_sha256)
     payload = validate_clinc150_payload(json.loads(arguments.dataset.read_text(encoding="utf-8")))
     splits = FrozenSplits.read(arguments.splits)
@@ -195,8 +152,8 @@ def main() -> None:
             name="CLINC150",
             version="full",
             source="UCI 570 / clinc/oos-eval",
-            archive_sha256=arguments.archive_sha256,
-            canonical_sha256=arguments.canonical_sha256,
+            archive_sha256=EXP0001_ARCHIVE_SHA256,
+            canonical_sha256=EXP0001_CANONICAL_SHA256,
             label_provenance="published benchmark labels",
         ),
         model=model_ref,
