@@ -88,3 +88,88 @@ Also observed:
 ### Next handoff
 
 B2 implementation planning.
+
+---
+
+## 2026-09-17T00:18:33Z
+
+- agent/model = Grok
+- branch = `feat/exp-0001-b2-encoder`
+- base commit = `d4cf036244607ab4f88a7c880628f1a046bf8f5f`
+- head at start of this turn = `afe3ce8f1b4f4fd65e0d57c4668e3e233ae9fc27`
+- objective = Reconcile stale EXP-0001 status metadata (`PLANNED` -> `RUNNING`) and record evidence-durability plus B2 pre-flight constraints. Cleanup/documentation/provenance only. Do not implement B2.
+
+This cleanup run produced no new model evidence.
+
+### Status reconciliation performed
+
+Human-authorized lifecycle/status transition only:
+
+- `docs/EXPERIMENT_REGISTRY.md`: EXP-0001 status `PLANNED` -> `RUNNING`. Question unchanged. Result column remains `-`. Other experiment statuses unchanged.
+- `experiments/EXP-0001/protocol.md`: `Status: PLANNED` -> `Status: RUNNING`. No other protocol content modified.
+- `README.md`: no edit. It already stated P0 COMPLETE, P1 RUNNING, EXP-0001 RUNNING.
+
+### Files changed
+
+- `docs/EXPERIMENT_REGISTRY.md`
+- `experiments/EXP-0001/protocol.md`
+- `docs/agent-log/AGENT_HANDOFF_LOG.md`
+
+### Evidence durability observations
+
+Inspected `.gitignore`, `docs/EVIDENCE_POLICY.md`, `AGENTS.md`, `README.md`, this log, `git ls-files experiments`, and `git check-ignore` on candidate artifact paths.
+
+Verified in this workspace and on GitHub-tracked files:
+
+- Committed under `experiments/EXP-0001/`: `prepare.py`, `protocol.md`, `run_baselines.py`, and `splits/clinc150-full-seed-42.json` only.
+- No B0/B1 manifests are committed. `git ls-files` has no `experiments/**/output/**` and no experiment manifest JSON besides the frozen split.
+- No raw prediction artifacts (`.npz` or `predictions.parquet`) are committed.
+- Local tree has no `experiments/EXP-0001/data/` and no `experiments/EXP-0001/output/`.
+- `.gitignore` ignores `experiments/**/data/`, `experiments/**/artifacts/`, `experiments/**/checkpoints/`, `experiments/**/logs/`, and `experiments/**/predictions.parquet`.
+- `.gitignore` does **not** ignore `experiments/**/output/`, `output/results/`, or `output/manifests/`. `run_baselines.py` writes manifests to `--output/manifests/` and prediction `.npz` files to `--output/results/`. Those paths are therefore committable if present, but they are currently absent from Git and from this clone.
+- README B0/B1 validation metrics therefore cannot be independently reconstructed from GitHub alone. GitHub currently holds transcribed numbers, frozen-split metadata, and acquisition hashes, not the run manifests or raw prediction arrays.
+- What remains local/operator-observed: B0/B1 validation metrics, B1 runtime, and the claim that both manifests report producer revision `d4cf036244607ab4f88a7c880628f1a046bf8f5f`. Those artifacts were not opened in this workspace.
+
+Could not verify from this clone: whether manifests or `.npz` files exist on the operator machine at `C:\Users\jcoul\Desktop\Projects\TEMPER`.
+
+A durable experiment-artifact policy must be decided before B2 evidence becomes important. This turn does not invent that policy, select storage infrastructure, upload artifacts, or commit generated model outputs.
+
+### B2 pre-flight constraints
+
+For the next agent, before any B2 evaluation:
+
+- exact encoder identifier must be frozen before evaluation
+- immutable model revision must be pinned
+- neural seed set must be predeclared before viewing B2 results
+- protocol currently requires multiple neural seeds
+- hardware identity must be recorded for B2
+- at minimum record CPU/GPU/RAM/device/dtype/batch size/max sequence length
+- no final-test access
+- no calibration access
+- no model-selection decisions based on final test
+- no claim that raw softmax probabilities are calibrated
+
+This turn does not select the B2 model, choose the seed set, or change dependencies.
+
+### Checks run
+
+- `git status --short --branch`
+- inspected the complete branch diff
+- `git diff --check`
+- confirmed only intended files changed
+- confirmed source-of-truth substantive content is unchanged except the two authorized `PLANNED` -> `RUNNING` transitions
+- confirmed no experiment output files were created or modified
+
+### Limitations
+
+- No B0/B1/B2 execution.
+- No final-test or calibration access.
+- No new metrics.
+- Manifest and prediction durability is reported from Git tracking and this workspace only.
+- Previous handoff entry still records that registry/protocol said `PLANNED`; that historical entry was not rewritten.
+
+### Next handoff
+
+B2 model/config/seed freeze and implementation planning.
+
+Not B2 execution yet.

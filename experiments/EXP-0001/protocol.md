@@ -1,6 +1,6 @@
 # EXP-0001 — Conventional Decision Baseline on CLINC150
 
-Status: PLANNED
+Status: RUNNING
 
 ## Research Question
 
