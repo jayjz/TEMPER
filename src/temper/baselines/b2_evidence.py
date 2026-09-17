@@ -5,9 +5,14 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+from numpy.typing import NDArray
+
 from temper.baselines.encoder import (
     B2_MODEL_ID,
     B2_MODEL_REVISION,
+    B2_N_VALIDATION_EXAMPLES,
+    B2_NUM_LABELS,
     B2_PARTITION,
     B2_SEEDS,
     B2_TOKENIZER_REVISION,
@@ -17,7 +22,7 @@ from temper.baselines.encoder import (
     verify_b2_probability_columns,
 )
 from temper.contracts import ExperimentManifest
-from temper.datasets import EXP0001_CANONICAL_SHA256
+from temper.datasets import EXP0001_ARCHIVE_SHA256, EXP0001_CANONICAL_SHA256
 from temper.evaluation import BaselineMetrics, compute_baseline_metrics, read_prediction_artifact
 from temper.evidence import verify_manifest_sidecar
 
@@ -25,6 +30,64 @@ from temper.evidence import verify_manifest_sidecar
 def _require_equal(name: str, observed: object, expected: object) -> None:
     if observed != expected:
         raise ValueError(f"B2 {name} mismatch: expected {expected!r}, found {observed!r}")
+
+
+def _require_integer_class_ids(name: str, values: NDArray[Any]) -> NDArray[np.int64]:
+    if not np.issubdtype(values.dtype, np.integer):
+        raise ValueError(f"B2 {name} must be integer class IDs")
+    cast = values.astype(np.int64, copy=False)
+    if (cast < 0).any() or (cast >= B2_NUM_LABELS).any():
+        raise ValueError(f"B2 {name} must be class IDs in 0..{B2_NUM_LABELS - 1}")
+    return cast
+
+
+def verify_b2_prediction_arrays(
+    labels: NDArray[Any],
+    predictions: NDArray[Any],
+    probabilities: NDArray[Any],
+    class_labels: NDArray[Any],
+) -> None:
+    """Reject internally inconsistent B2 prediction artifacts."""
+    if labels.shape != (B2_N_VALIDATION_EXAMPLES,):
+        raise ValueError(
+            f"B2 labels must have shape ({B2_N_VALIDATION_EXAMPLES},), found {labels.shape}"
+        )
+    if predictions.shape != (B2_N_VALIDATION_EXAMPLES,):
+        raise ValueError(
+            "B2 predictions must have shape "
+            f"({B2_N_VALIDATION_EXAMPLES},), found {predictions.shape}"
+        )
+    expected_prob = (B2_N_VALIDATION_EXAMPLES, B2_NUM_LABELS)
+    if probabilities.shape != expected_prob:
+        raise ValueError(
+            f"B2 probabilities must have shape {expected_prob}, found {probabilities.shape}"
+        )
+    if class_labels.shape != (B2_NUM_LABELS,):
+        raise ValueError(
+            f"B2 class_labels must have shape ({B2_NUM_LABELS},), found {class_labels.shape}"
+        )
+    if not np.issubdtype(probabilities.dtype, np.floating):
+        raise ValueError("B2 probabilities must be floating-point")
+    if not np.isfinite(probabilities).all():
+        raise ValueError("B2 probabilities contain non-finite values")
+    if not np.allclose(probabilities.sum(axis=1), 1.0, rtol=0.0, atol=1e-6):
+        raise ValueError("B2 probability rows must sum to 1")
+    _require_integer_class_ids("labels", labels)
+    predictions_i = _require_integer_class_ids("predictions", predictions)
+    argmax = probabilities.argmax(axis=1).astype(np.int64, copy=False)
+    if not np.array_equal(predictions_i, argmax):
+        raise ValueError("B2 predictions must equal argmax(probabilities, axis=1)")
+    class_label_list = [str(label) for label in class_labels.tolist()]
+    verify_b2_probability_columns(probabilities.astype(np.float64, copy=False), class_label_list)
+
+
+def _require_common_producer_commit(commits: list[object]) -> str:
+    if any(not isinstance(commit, str) or not commit for commit in commits):
+        raise ValueError("B2 aggregation requires a non-empty git_commit on every seed")
+    unique = {str(commit) for commit in commits}
+    if len(unique) != 1:
+        raise ValueError(f"B2 aggregation requires one producer commit; found {sorted(unique)}")
+    return str(commits[0])
 
 
 def verify_b2_seed_bundle(output: Path, seed: int) -> dict[str, Any]:
@@ -60,6 +123,11 @@ def verify_b2_seed_bundle(output: Path, seed: int) -> dict[str, Any]:
         manifest.dataset.canonical_sha256,
         EXP0001_CANONICAL_SHA256,
     )
+    _require_equal(
+        "dataset.archive_sha256",
+        manifest.dataset.archive_sha256,
+        EXP0001_ARCHIVE_SHA256,
+    )
     _require_equal("calibration_method", manifest.calibration_method, None)
     _require_equal("threshold_selection", manifest.threshold_selection, None)
     _require_equal("hyperparameters", manifest.hyperparameters, frozen_b2_hyperparameters())
@@ -67,8 +135,7 @@ def verify_b2_seed_bundle(output: Path, seed: int) -> dict[str, Any]:
     labels, predictions, probabilities, class_labels, stored_metrics = read_prediction_artifact(
         artifact
     )
-    class_label_list = [str(label) for label in class_labels.tolist()]
-    verify_b2_probability_columns(probabilities, class_label_list)
+    verify_b2_prediction_arrays(labels, predictions, probabilities, class_labels)
     recomputed = compute_baseline_metrics(labels, predictions, probabilities)
     if recomputed != stored_metrics:
         raise ValueError(
@@ -111,6 +178,9 @@ def verified_b2_aggregate(output: Path) -> dict[str, object]:
     extra_check = load_verified_b2_metrics(output)
     if set(extra_check) != set(B2_SEEDS):
         raise ValueError(f"B2 aggregation requires exactly seeds {B2_SEEDS}")
+    producer_git_commit = _require_common_producer_commit(
+        [bundle["git_commit"] for bundle in bundles]
+    )
     summary = aggregate_b2_metrics({int(bundle["seed"]): bundle["metrics"] for bundle in bundles})
     return {
         "experiment_id": "EXP-0001",
@@ -118,9 +188,11 @@ def verified_b2_aggregate(output: Path) -> dict[str, object]:
         "partition": B2_PARTITION,
         "headline_rule": summary["headline_rule"],
         "canonical_sha256": EXP0001_CANONICAL_SHA256,
+        "archive_sha256": EXP0001_ARCHIVE_SHA256,
         "model_id": B2_MODEL_ID,
         "model_revision": B2_MODEL_REVISION,
         "tokenizer_revision": B2_TOKENIZER_REVISION,
+        "producer_git_commit": producer_git_commit,
         "seeds": [
             {
                 "seed": bundle["seed"],

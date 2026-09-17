@@ -424,3 +424,67 @@ No B2 training. No calibration or final-test access.
 ### Next handoff
 
 Official B2 seeds 13, 21, 37 on freeze-satisfying GPU hardware, from a clean git tree, using the real canonical `data_full.json`. Do not change the freeze. Preserve every seed. Then independent Codex review. Do not merge.
+
+---
+
+## 2026-09-17T01:54:52Z
+
+- agent/model = Grok
+- branch = `feat/exp-0001-b2-encoder`
+- starting commit = `f3526a43535223f511c93d9f9c55712781d9a712`
+- objective = Close remaining B2 execution-integrity gaps before official GPU runs. No training. No freeze change.
+
+This turn is an implementation-hardening record. It is not a B2 research result.
+
+### Status labels
+
+- IMPLEMENTED: external evidence-root requirement; git provenance pinned to the TEMPER source tree; official aggregate requires one shared producer commit; stronger prediction-array invariants; archive SHA checked against frozen identity; PYTHONHASHSEED recorded as not applied in-process; atomic-write overwrite refusal documented as best-effort.
+- OBSERVED: quality gates passed (80 tests). No B2 training in this turn.
+- UNVERIFIED: B2 metrics; operator GPU fit; Hub fetch of the pinned BERT revision; operator-local B0/B1 artifacts.
+
+### Defects addressed
+
+- A: in-repo `--output` would dirty git after seed 13 and fail `require_clean_git()` for seed 21. `--output` must now resolve outside the repository. Git status/HEAD are taken from the TEMPER source tree via `git -C`, not process cwd. `require_clean_git()` is unchanged in strictness.
+- B: aggregate now fails unless all three seed manifests share the same non-empty `git_commit`. That common value is `producer_git_commit`.
+- C: each seed `.npz` must be 1500×150, finite, row-normalized, argmax-consistent, with class IDs in 0..149.
+- Archive: declared `dataset.archive_sha256` must equal the frozen EXP-0001 archive identity. Zip is still not re-hashed.
+- PYTHONHASHSEED: no longer set inside the running interpreter; recorded as `pythonhashseed_applied_in_process=False`.
+- Atomic writes: still temp+fsync+replace; overwrite refusal is best-effort for a single operator, not a concurrency lock.
+
+### Files changed
+
+- `src/temper/evidence/integrity.py`
+- `src/temper/evidence/__init__.py`
+- `src/temper/baselines/b2_evidence.py`
+- `src/temper/baselines/encoder.py` (validation-size constant; determinism recording only)
+- `experiments/EXP-0001/run_b2.py`
+- `tests/unit/test_b2_evidence.py`
+- `tests/unit/test_b2_encoder.py`
+- `README.md` (external evidence-root example)
+- `docs/agent-log/AGENT_HANDOFF_LOG.md` (appended)
+
+Unchanged source-of-truth: freeze, protocol, registry, thesis, roadmap, evaluation protocol, evidence policy, research questions, ADRs, frozen split JSON. No dependency change.
+
+### Tests added
+
+External output is invisible to source `git status`; in-repo output is rejected; mixed/missing producer commits fail; wrong archive SHA fails; predictions≠argmax, bad shapes, non-normalized rows, and invalid class IDs fail; valid 1500-row bundles still aggregate; PYTHONHASHSEED is not claimed as in-process.
+
+### Quality gates
+
+- `uv run pytest` — 80 passed
+- `uv run ruff check .`
+- `uv run ruff format --check .`
+- `uv run mypy src`
+- `uv run bandit -r src` — no issues
+- `uv run pip-audit` — no known vulnerabilities
+- `git diff --check`
+
+No B2 training or validation was executed in this turn.
+
+### Recommended official B2 output root
+
+`C:\Users\jcoul\Desktop\TEMPER-EVIDENCE\EXP-0001`
+
+### Next handoff
+
+From a clean TEMPER source tree, run seeds 13, 21, then 37 on freeze-satisfying GPU hardware with `--output` pointing at the external evidence root. Then `--aggregate` on that same root. Do not change the freeze. Do not merge.

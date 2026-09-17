@@ -39,6 +39,7 @@ B2_WARMUP_RATIO = 0.1
 B2_MAX_GRAD_NORM = 1.0
 B2_SEEDS: tuple[int, ...] = (13, 21, 37)
 B2_PARTITION = "validation"
+B2_N_VALIDATION_EXAMPLES = 1500
 B2_HIDDEN_SIZE = 768
 B2_NUM_HIDDEN_LAYERS = 12
 B2_NUM_ATTENTION_HEADS = 12
@@ -153,9 +154,13 @@ def verify_b2_probability_columns(
 
 
 def configure_b2_determinism(seed: int) -> dict[str, object]:
-    """Seed RNGs and request deterministic kernels; record what actually applied."""
+    """Seed RNGs and request deterministic kernels; record what actually applied.
+
+    PYTHONHASHSEED cannot be applied to an already-running interpreter. The
+    startup value is recorded but is not treated as an in-process guarantee.
+    """
     seed = require_allowed_b2_seed(seed)
-    os.environ.setdefault("PYTHONHASHSEED", str(seed))
+    pythonhashseed_startup = os.environ.get("PYTHONHASHSEED")
     os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
     random.seed(seed)
     np.random.seed(seed)
@@ -179,6 +184,9 @@ def configure_b2_determinism(seed: int) -> dict[str, object]:
         "cudnn_benchmark": False,
         "deterministic_algorithms": deterministic_algorithms,
         "deterministic_algorithms_error": deterministic_algorithms_error,
+        "pythonhashseed_startup": pythonhashseed_startup,
+        "pythonhashseed_applied_in_process": False,
+        "cublas_workspace_config": os.environ.get("CUBLAS_WORKSPACE_CONFIG"),
     }
 
 

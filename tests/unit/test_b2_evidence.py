@@ -9,10 +9,16 @@ from types import ModuleType
 import numpy as np
 import pytest
 
-from temper.baselines.b2_evidence import verified_b2_aggregate, verify_b2_seed_bundle
+from temper.baselines.b2_evidence import (
+    verified_b2_aggregate,
+    verify_b2_prediction_arrays,
+    verify_b2_seed_bundle,
+)
 from temper.baselines.encoder import (
     B2_MODEL_ID,
     B2_MODEL_REVISION,
+    B2_N_VALIDATION_EXAMPLES,
+    B2_NUM_LABELS,
     B2_SEEDS,
     B2_TOKENIZER_REVISION,
     b2_run_artifacts,
@@ -23,10 +29,13 @@ from temper.contracts import DatasetRef, ExperimentManifest, HardwareRef, ModelR
 from temper.datasets import EXP0001_ARCHIVE_SHA256, EXP0001_CANONICAL_SHA256
 from temper.evaluation import compute_baseline_metrics, write_prediction_artifact
 from temper.evidence import (
+    inspect_git_provenance,
     require_clean_git,
+    require_path_outside_repository,
     sha256_bytes,
     sha256_file,
     sidecar_digest_path,
+    temper_repository_root,
     verify_manifest_sidecar,
     write_manifest_sidecar,
     write_text_atomic,
@@ -48,11 +57,10 @@ def _class_labels() -> list[str]:
     return [f"intent-{index:03}" for index in range(150)]
 
 
-def _toy_arrays() -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    labels = np.array([0, 1, 2, 3], dtype=np.int64)
-    probabilities = np.zeros((4, 150), dtype=np.float64)
-    for index, label in enumerate(labels):
-        probabilities[index, label] = 1.0
+def _valid_arrays() -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    labels = np.arange(B2_N_VALIDATION_EXAMPLES, dtype=np.int64) % B2_NUM_LABELS
+    probabilities = np.zeros((B2_N_VALIDATION_EXAMPLES, B2_NUM_LABELS), dtype=np.float64)
+    probabilities[np.arange(B2_N_VALIDATION_EXAMPLES), labels] = 1.0
     predictions = labels.copy()
     class_labels = np.array(_class_labels())
     return labels, predictions, probabilities, class_labels
@@ -64,13 +72,19 @@ def _write_seed_bundle(
     *,
     model_revision: str = B2_MODEL_REVISION,
     canonical_sha256: str = EXP0001_CANONICAL_SHA256,
+    archive_sha256: str = EXP0001_ARCHIVE_SHA256,
+    git_commit: str | None = "deadbeef",
     manifest_seed: int | None = None,
+    arrays: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray] | None = None,
     write_sidecar: bool = True,
     write_manifest: bool = True,
     write_artifact: bool = True,
 ) -> None:
     names = b2_run_artifacts(seed)
-    labels, predictions, probabilities, class_labels = _toy_arrays()
+    if arrays is None:
+        labels, predictions, probabilities, class_labels = _valid_arrays()
+    else:
+        labels, predictions, probabilities, class_labels = arrays
     metrics = compute_baseline_metrics(labels, predictions, probabilities)
     artifact = output / "results" / names.result_name
     manifest_path = output / "manifests" / names.manifest_name
@@ -91,12 +105,12 @@ def _write_seed_bundle(
         run_id=names.run_id,
         phase="P1",
         status="RUNNING",
-        git_commit="deadbeef",
+        git_commit=git_commit,
         dataset=DatasetRef(
             name="CLINC150",
             version="full",
             source="UCI 570 / clinc/oos-eval",
-            archive_sha256=EXP0001_ARCHIVE_SHA256,
+            archive_sha256=archive_sha256,
             canonical_sha256=canonical_sha256,
             label_provenance="published benchmark labels",
         ),
@@ -317,6 +331,8 @@ def test_verified_aggregate_does_not_select_best_seed(tmp_path: Path) -> None:
     assert "best_seed" not in payload["summary"]
     assert payload["canonical_sha256"] == EXP0001_CANONICAL_SHA256
     assert payload["model_revision"] == B2_MODEL_REVISION
+    assert payload["producer_git_commit"] == "deadbeef"
+    assert payload["archive_sha256"] == EXP0001_ARCHIVE_SHA256
 
 
 def test_require_clean_git_fails_closed_when_dirty(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -326,3 +342,102 @@ def test_require_clean_git_fails_closed_when_dirty(monkeypatch: pytest.MonkeyPat
     )
     with pytest.raises(RuntimeError, match="dirty"):
         require_clean_git()
+
+
+def test_external_output_does_not_dirty_source_git_status(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    marker = tmp_path / "results" / "EXP-0001-B2-validation-seed-13.npz"
+    marker.parent.mkdir(parents=True)
+    monkeypatch.chdir(tmp_path)
+    before = inspect_git_provenance()
+    marker.write_bytes(b"external-evidence")
+    after = inspect_git_provenance()
+    status = str(after.get("git_status_porcelain") or "")
+    assert "EXP-0001-B2-validation-seed-13.npz" not in status
+    assert "external-evidence" not in status
+    assert after["git_dirty"] == before["git_dirty"]
+    assert after["git_commit"] == before["git_commit"]
+    assert Path(str(after["repository_root"])) == temper_repository_root()
+    assert require_path_outside_repository(tmp_path) == tmp_path.resolve()
+
+
+def test_in_repo_output_is_rejected_before_execution(
+    run_b2_module: ModuleType, tmp_path: Path
+) -> None:
+    arguments = argparse.Namespace(
+        dataset=tmp_path / "data_full.json",
+        splits=tmp_path / "splits.json",
+        output=Path("experiments/EXP-0001/output"),
+        seed=13,
+    )
+    with pytest.raises(ValueError, match="outside the TEMPER repository"):
+        run_b2_module._run_one_seed(arguments)
+
+
+def test_mixed_producer_commits_fail_aggregation(tmp_path: Path) -> None:
+    _write_seed_bundle(tmp_path, 13, git_commit="aaaaaaaaaaaaaaaa")
+    _write_seed_bundle(tmp_path, 21, git_commit="bbbbbbbbbbbbbbbb")
+    _write_seed_bundle(tmp_path, 37, git_commit="aaaaaaaaaaaaaaaa")
+    with pytest.raises(ValueError, match="one producer commit"):
+        verified_b2_aggregate(tmp_path)
+
+
+def test_missing_producer_commit_fails_aggregation(tmp_path: Path) -> None:
+    _write_seed_bundle(tmp_path, 13, git_commit="deadbeef")
+    _write_seed_bundle(tmp_path, 21, git_commit=None)
+    _write_seed_bundle(tmp_path, 37, git_commit="deadbeef")
+    with pytest.raises(ValueError, match="non-empty git_commit"):
+        verified_b2_aggregate(tmp_path)
+
+
+def test_wrong_archive_sha_in_manifest_fails_verification(tmp_path: Path) -> None:
+    _write_all_seeds(tmp_path)
+    sidecar_digest_path(tmp_path / "manifests" / b2_run_artifacts(13).manifest_name).unlink()
+    (tmp_path / "manifests" / b2_run_artifacts(13).manifest_name).unlink()
+    (tmp_path / "results" / b2_run_artifacts(13).result_name).unlink()
+    _write_seed_bundle(tmp_path, 13, archive_sha256="0" * 64)
+    with pytest.raises(ValueError, match=r"dataset\.archive_sha256"):
+        verified_b2_aggregate(tmp_path)
+
+
+def test_predictions_inconsistent_with_argmax_fail(tmp_path: Path) -> None:
+    labels, predictions, probabilities, class_labels = _valid_arrays()
+    predictions = predictions.copy()
+    predictions[0] = (predictions[0] + 1) % B2_NUM_LABELS
+    with pytest.raises(ValueError, match="argmax"):
+        verify_b2_prediction_arrays(labels, predictions, probabilities, class_labels)
+    _write_seed_bundle(tmp_path, 13, arrays=(labels, predictions, probabilities, class_labels))
+    with pytest.raises(ValueError, match="argmax"):
+        verify_b2_seed_bundle(tmp_path, 13)
+
+
+def test_malformed_probability_shape_fails() -> None:
+    labels, predictions, _probabilities, class_labels = _valid_arrays()
+    bad = np.zeros((B2_N_VALIDATION_EXAMPLES, 149), dtype=np.float64)
+    with pytest.raises(ValueError, match="probabilities must have shape"):
+        verify_b2_prediction_arrays(labels, predictions, bad, class_labels)
+
+
+def test_non_normalized_probability_rows_fail() -> None:
+    labels, predictions, probabilities, class_labels = _valid_arrays()
+    probabilities = probabilities.copy()
+    probabilities[0] = 0.0
+    with pytest.raises(ValueError, match="probability rows must sum to 1"):
+        verify_b2_prediction_arrays(labels, predictions, probabilities, class_labels)
+
+
+def test_invalid_class_ids_fail() -> None:
+    labels, predictions, probabilities, class_labels = _valid_arrays()
+    labels = labels.copy()
+    labels[0] = 150
+    with pytest.raises(ValueError, match="class IDs"):
+        verify_b2_prediction_arrays(labels, predictions, probabilities, class_labels)
+
+
+def test_valid_seed_bundles_still_aggregate(tmp_path: Path) -> None:
+    _write_all_seeds(tmp_path)
+    payload = verified_b2_aggregate(tmp_path)
+    assert payload["producer_git_commit"] == "deadbeef"
+    assert payload["summary"]["n_seeds"] == 3
+    assert payload["summary"]["headline_rule"] == "mean_and_sample_std_over_predeclared_seeds"

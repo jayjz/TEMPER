@@ -395,7 +395,9 @@ Prepare the canonical UCI download and immutable seed-42 split metadata with
 Run one frozen B2 validation seed (13, 21, or 37) with
 `uv run python experiments/EXP-0001/run_b2.py`. That command has no test-partition option
 and does not accept a caller-supplied dataset hash; it verifies the frozen EXP-0001
-canonical SHA-256 before loading the encoder.
+canonical SHA-256 before loading the encoder. Official B2 evidence must be written
+outside the repository so later seeds still see a clean source tree, for example
+`--output C:\Users\jcoul\Desktop\TEMPER-EVIDENCE\EXP-0001`.
 
 The first experiment establishes how far conventional classification gets before TEMPER introduces calibration-aware training, abstention policies, model cascades, or frontier escalation.
 

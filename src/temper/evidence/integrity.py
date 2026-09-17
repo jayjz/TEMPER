@@ -14,6 +14,28 @@ from typing import Final
 DIGEST_SCHEMA: Final = "temper.evidence.sidecar.v1"
 
 
+def temper_repository_root() -> Path:
+    """Locate the TEMPER source tree from this file, not from the process cwd."""
+    for candidate in Path(__file__).resolve().parents:
+        if (candidate / ".git").exists() and (candidate / "pyproject.toml").exists():
+            return candidate
+    raise RuntimeError("unable to locate TEMPER repository root")
+
+
+def require_path_outside_repository(path: Path, *, label: str = "output") -> Path:
+    """Refuse generated-evidence paths that would dirty the source tree."""
+    root = temper_repository_root().resolve()
+    resolved = path.expanduser().resolve()
+    try:
+        resolved.relative_to(root)
+    except ValueError:
+        return resolved
+    raise ValueError(
+        f"B2 {label} path must be outside the TEMPER repository so generated evidence "
+        f"does not dirty the source tree; refused {resolved} under {root}"
+    )
+
+
 def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -27,7 +49,12 @@ def sha256_bytes(payload: bytes) -> str:
 
 
 def write_bytes_atomic(path: Path, payload: bytes) -> None:
-    """Write bytes via a same-directory replace. Refuse overwrite."""
+    """Write bytes via a same-directory replace.
+
+    Overwrite refusal is best-effort for a single-operator workflow: the
+    destination is checked before creating the tempfile and again before
+    replace. This is not a lock against concurrent creators of the same path.
+    """
     if path.exists():
         raise FileExistsError(f"refusing to overwrite existing file: {path}")
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -125,23 +152,28 @@ def verify_manifest_sidecar(
 
 
 def inspect_git_provenance() -> dict[str, object]:
-    """Record HEAD and working-tree cleanliness. Do not invent a commit."""
+    """Record HEAD and working-tree cleanliness of the TEMPER source tree."""
     git = shutil.which("git")
-    if git is None:
+    try:
+        root = temper_repository_root()
+    except RuntimeError:
+        root = None
+    if git is None or root is None:
         return {
             "git_commit": None,
             "git_dirty": None,
             "git_status_porcelain": None,
+            "repository_root": str(root) if root is not None else None,
         }
     try:
         commit = subprocess.check_output(  # nosec B603
-            [git, "rev-parse", "HEAD"], text=True
+            [git, "-C", str(root), "rev-parse", "HEAD"], text=True
         ).strip()
     except (OSError, subprocess.CalledProcessError):
         commit = None
     try:
         porcelain = subprocess.check_output(  # nosec B603
-            [git, "status", "--porcelain"], text=True
+            [git, "-C", str(root), "status", "--porcelain"], text=True
         )
     except (OSError, subprocess.CalledProcessError):
         porcelain = None
@@ -150,11 +182,12 @@ def inspect_git_provenance() -> dict[str, object]:
         "git_commit": commit or None,
         "git_dirty": dirty,
         "git_status_porcelain": porcelain.strip() if porcelain and porcelain.strip() else None,
+        "repository_root": str(root),
     }
 
 
 def require_clean_git() -> str:
-    """Fail closed when HEAD is unknown or the working tree is dirty."""
+    """Fail closed when HEAD is unknown or the source working tree is dirty."""
     snapshot = inspect_git_provenance()
     commit = snapshot["git_commit"]
     dirty = snapshot["git_dirty"]

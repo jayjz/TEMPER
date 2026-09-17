@@ -21,6 +21,7 @@ from temper.baselines.encoder import (
     aggregate_b2_metrics,
     b2_run_artifacts,
     collect_b2_hardware_software,
+    configure_b2_determinism,
     frozen_b2_hyperparameters,
     in_scope_class_labels,
     load_frozen_b2_model_and_tokenizer,
@@ -269,6 +270,14 @@ class _FakeEncoder(torch.nn.Module):
         if labels is not None:
             loss = torch.nn.functional.cross_entropy(logits, labels)
         return SimpleNamespace(loss=loss, logits=logits)
+
+
+def test_pythonhashseed_is_recorded_as_not_applied_in_process() -> None:
+    snapshot = configure_b2_determinism(13)
+    assert snapshot["pythonhashseed_applied_in_process"] is False
+    assert "pythonhashseed_startup" in snapshot
+    assert snapshot["cublas_workspace_config"] is not None
+    json.dumps({key: snapshot[key] for key in snapshot if snapshot[key] is not None})
 
 
 def test_tiny_training_loop_keeps_final_epoch_weights() -> None:

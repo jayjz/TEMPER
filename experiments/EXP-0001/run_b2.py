@@ -46,6 +46,7 @@ from temper.datasets import (
 from temper.evaluation import write_prediction_artifact
 from temper.evidence import (
     require_clean_git,
+    require_path_outside_repository,
     sha256_bytes,
     sha256_file,
     sidecar_digest_path,
@@ -138,9 +139,10 @@ def _write_manifest(
 def _run_one_seed(arguments: argparse.Namespace) -> None:
     seed = require_allowed_b2_seed(arguments.seed)
     require_b2_validation_partition(B2_PARTITION)
+    output = require_path_outside_repository(arguments.output)
     names = b2_run_artifacts(seed)
-    artifact = arguments.output / "results" / names.result_name
-    manifest_path = arguments.output / "manifests" / names.manifest_name
+    artifact = output / "results" / names.result_name
+    manifest_path = output / "manifests" / names.manifest_name
     sidecar_path = sidecar_digest_path(manifest_path)
     if artifact.exists():
         raise FileExistsError(f"refusing to overwrite prediction artifact: {artifact}")
@@ -279,8 +281,9 @@ def _run_one_seed(arguments: argparse.Namespace) -> None:
 
 
 def _aggregate(arguments: argparse.Namespace) -> None:
-    summary = verified_b2_aggregate(arguments.output)
-    summary_path = arguments.output / "manifests" / "EXP-0001-B2-validation-aggregate.json"
+    output = require_path_outside_repository(arguments.output)
+    summary = verified_b2_aggregate(output)
+    summary_path = output / "manifests" / "EXP-0001-B2-validation-aggregate.json"
     sidecar_path = sidecar_digest_path(summary_path)
     if summary_path.exists():
         raise FileExistsError(f"refusing to overwrite aggregate summary: {summary_path}")
