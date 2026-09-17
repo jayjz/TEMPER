@@ -57,3 +57,11 @@ ignore_missing_imports = true
 
 [tool.bandit]
 exclude_dirs = [".venv", "tests", "experiments"]
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu130" }
+
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true
