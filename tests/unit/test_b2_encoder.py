@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import importlib.util
 import json
 from pathlib import Path
@@ -209,6 +208,8 @@ def test_hardware_and_frozen_config_serialize_safely() -> None:
     }
     assert required <= set(snapshot)
     assert snapshot["gpu"] in {None, "none"} or isinstance(snapshot["gpu"], str)
+    assert snapshot["headline_hardware_qualification"] == "UNVERIFIED"
+    assert snapshot["cuda_used"] is False or snapshot["cuda_used"] is True
     json.dumps(frozen_b2_hyperparameters())
     json.dumps({key: snapshot[key] for key in snapshot if snapshot[key] is not None})
 
@@ -292,6 +293,8 @@ def test_run_b2_cli_has_no_test_partition_flag(run_b2_module: ModuleType) -> Non
     assert 'choices=("validation", "test")' not in parser_source
     assert 'payload["test"]' not in parser_source
     assert "calibration_indices" not in parser_source
+    assert "--canonical-sha256" not in parser_source
+    assert "--archive-sha256" not in parser_source
 
 
 def test_run_b2_refuses_existing_manifest(run_b2_module: ModuleType, tmp_path: Path) -> None:
@@ -303,8 +306,6 @@ def test_run_b2_refuses_existing_manifest(run_b2_module: ModuleType, tmp_path: P
     dataset_path.write_bytes(b"{}")
     arguments = argparse.Namespace(
         dataset=dataset_path,
-        archive_sha256="a",
-        canonical_sha256=hashlib.sha256(b"{}").hexdigest(),
         splits=tmp_path / "splits.json",
         output=tmp_path,
         seed=13,

@@ -51,6 +51,14 @@ def test_matching_canonical_hash_continues_past_verification(
     dataset_path = tmp_path / "data_full.json"
     dataset_path.write_bytes(b"{}")
     expected_sha256 = hashlib.sha256(dataset_path.read_bytes()).hexdigest()
+    monkeypatch.setattr(
+        "temper.datasets.exp0001.EXP0001_CANONICAL_SHA256",
+        expected_sha256,
+    )
+    monkeypatch.setattr(
+        "temper.datasets.exp0001.EXP0001_ARCHIVE_SHA256",
+        "archive-provenance-only",
+    )
 
     def stop_after_verification(payload: object) -> dict[str, list[list[str]]]:
         assert payload == {}
@@ -104,7 +112,7 @@ def test_mismatched_canonical_hash_rejects_before_execution_or_artifacts(
             "--dataset",
             str(dataset_path),
             "--archive-sha256",
-            "archive-provenance-only",
+            run_baselines_module.EXP0001_ARCHIVE_SHA256,
             "--canonical-sha256",
             "0" * 64,
             "--splits",
@@ -119,10 +127,52 @@ def test_mismatched_canonical_hash_rejects_before_execution_or_artifacts(
     observed_sha256 = hashlib.sha256(dataset_path.read_bytes()).hexdigest()
     with pytest.raises(
         ValueError,
-        match=f"expected {'0' * 64}, observed {observed_sha256}",
+        match="caller-supplied canonical SHA-256 is not the frozen EXP-0001 identity",
     ):
         run_baselines_module.main()
 
+    assert not output_path.exists()
+    assert observed_sha256 != "0" * 64
+
+
+def test_modified_dataset_with_matching_caller_hash_is_rejected(
+    monkeypatch: pytest.MonkeyPatch, run_baselines_module: ModuleType, tmp_path: Path
+) -> None:
+    dataset_path = tmp_path / "data_full.json"
+    dataset_path.write_bytes(b'{"tampered": true}')
+    attacker_hash = hashlib.sha256(dataset_path.read_bytes()).hexdigest()
+    output_path = tmp_path / "output"
+
+    def fail_if_called(*args: object, **kwargs: object) -> None:
+        raise AssertionError("modified dataset was admitted")
+
+    monkeypatch.setattr(run_baselines_module, "validate_clinc150_payload", fail_if_called)
+    monkeypatch.setattr(run_baselines_module, "MajorityBaseline", fail_if_called)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_baselines.py",
+            "--dataset",
+            str(dataset_path),
+            "--archive-sha256",
+            run_baselines_module.EXP0001_ARCHIVE_SHA256,
+            "--canonical-sha256",
+            attacker_hash,
+            "--splits",
+            str(tmp_path / "splits.json"),
+            "--output",
+            str(output_path),
+            "--baseline",
+            "B0",
+        ],
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="caller-supplied canonical SHA-256 is not the frozen EXP-0001 identity",
+    ):
+        run_baselines_module.main()
     assert not output_path.exists()
 
 
@@ -245,6 +295,14 @@ def test_malformed_split_rejects_before_baseline_fitting(
     payload = _valid_payload()
     dataset_path = tmp_path / "data_full.json"
     dataset_path.write_text(json.dumps(payload), encoding="utf-8")
+    monkeypatch.setattr(
+        "temper.datasets.exp0001.EXP0001_CANONICAL_SHA256",
+        hashlib.sha256(dataset_path.read_bytes()).hexdigest(),
+    )
+    monkeypatch.setattr(
+        "temper.datasets.exp0001.EXP0001_ARCHIVE_SHA256",
+        "archive-provenance-only",
+    )
     splits = _valid_splits()
     malformed = FrozenSplits(
         seed=splits.seed,

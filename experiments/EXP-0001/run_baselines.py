@@ -7,7 +7,6 @@ an explicit invocation and this script has no tuning or selection behavior.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import platform
 import subprocess
@@ -19,8 +18,17 @@ import numpy as np
 
 from temper.baselines import MajorityBaseline, TfidfLogisticRegressionBaseline
 from temper.contracts import DatasetRef, ExperimentManifest, HardwareRef, ModelRef
-from temper.datasets import FrozenSplits, validate_clinc150_payload, validate_exp0001_splits
+from temper.datasets import (
+    EXP0001_ARCHIVE_SHA256,
+    EXP0001_CANONICAL_SHA256,
+    FrozenSplits,
+    validate_clinc150_payload,
+    validate_exp0001_splits,
+    verify_exp0001_archive_claim,
+    verify_exp0001_canonical_dataset,
+)
 from temper.evaluation import compute_baseline_metrics, write_prediction_artifact
+from temper.evidence import sha256_file
 
 
 def _git_commit() -> str | None:
@@ -31,20 +39,11 @@ def _git_commit() -> str | None:
 
 
 def _hash_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+    return sha256_file(path)
 
 
-def _verify_canonical_dataset(dataset_path: Path, canonical_sha256: str) -> None:
-    observed_sha256 = _hash_file(dataset_path)
-    if observed_sha256 != canonical_sha256:
-        raise ValueError(
-            "dataset SHA-256 does not match --canonical-sha256: "
-            f"expected {canonical_sha256}, observed {observed_sha256}"
-        )
+def _verify_canonical_dataset(dataset_path: Path, canonical_sha256: str) -> str:
+    return verify_exp0001_canonical_dataset(dataset_path, claimed_canonical=canonical_sha256)
 
 
 def _records(
@@ -84,6 +83,7 @@ def main() -> None:
     parser.add_argument("--partition", choices=("validation", "test"), default="validation")
     arguments = parser.parse_args()
 
+    verify_exp0001_archive_claim(arguments.archive_sha256)
     _verify_canonical_dataset(arguments.dataset, arguments.canonical_sha256)
     payload = validate_clinc150_payload(json.loads(arguments.dataset.read_text(encoding="utf-8")))
     splits = FrozenSplits.read(arguments.splits)
@@ -152,8 +152,8 @@ def main() -> None:
             name="CLINC150",
             version="full",
             source="UCI 570 / clinc/oos-eval",
-            archive_sha256=arguments.archive_sha256,
-            canonical_sha256=arguments.canonical_sha256,
+            archive_sha256=EXP0001_ARCHIVE_SHA256,
+            canonical_sha256=EXP0001_CANONICAL_SHA256,
             label_provenance="published benchmark labels",
         ),
         model=model_ref,

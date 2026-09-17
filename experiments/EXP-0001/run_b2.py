@@ -1,19 +1,19 @@
 """Execute one frozen EXP-0001 B2 seed on the validation partition only.
 
 Calibration examples and the official test partition are not accepted.
+Dataset identity is the frozen EXP-0001 canonical SHA-256, not a caller hash.
 """
 
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
-import subprocess
 import time
 from pathlib import Path
 
 import numpy as np
 
+from temper.baselines.b2_evidence import verified_b2_aggregate
 from temper.baselines.encoder import (
     B2_MAX_LENGTH,
     B2_MODEL_ID,
@@ -21,7 +21,6 @@ from temper.baselines.encoder import (
     B2_PARTITION,
     B2_SEEDS,
     B2_TOKENIZER_REVISION,
-    aggregate_b2_metrics,
     b2_run_artifacts,
     collect_b2_hardware_software,
     configure_b2_determinism,
@@ -36,32 +35,23 @@ from temper.baselines.encoder import (
     train_frozen_b2,
 )
 from temper.contracts import DatasetRef, ExperimentManifest, HardwareRef, ModelRef
-from temper.datasets import FrozenSplits, validate_clinc150_payload, validate_exp0001_splits
-from temper.evaluation import BaselineMetrics, read_prediction_artifact, write_prediction_artifact
-
-
-def _git_commit() -> str | None:
-    try:
-        return subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
-    except (OSError, subprocess.CalledProcessError):
-        return None
-
-
-def _hash_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def _verify_canonical_dataset(dataset_path: Path, canonical_sha256: str) -> None:
-    observed_sha256 = _hash_file(dataset_path)
-    if observed_sha256 != canonical_sha256:
-        raise ValueError(
-            "dataset SHA-256 does not match --canonical-sha256: "
-            f"expected {canonical_sha256}, observed {observed_sha256}"
-        )
+from temper.datasets import (
+    EXP0001_ARCHIVE_SHA256,
+    EXP0001_CANONICAL_SHA256,
+    FrozenSplits,
+    validate_clinc150_payload,
+    validate_exp0001_splits,
+    verify_exp0001_canonical_dataset,
+)
+from temper.evaluation import write_prediction_artifact
+from temper.evidence import (
+    require_clean_git,
+    sha256_bytes,
+    sha256_file,
+    sidecar_digest_path,
+    write_manifest_sidecar,
+    write_text_atomic,
+)
 
 
 def _records(
@@ -78,29 +68,30 @@ def _write_manifest(
     path: Path,
     run_id: str,
     seed: int,
-    archive_sha256: str,
-    canonical_sha256: str,
+    git_commit: str,
     hardware: HardwareRef,
     software_environment: dict[str, str],
     runtime: dict[str, object],
     artifact: Path,
     limitations: tuple[str, ...],
-) -> None:
+) -> str:
+    sidecar_path = sidecar_digest_path(path)
     if path.exists():
         raise FileExistsError(f"refusing to overwrite manifest: {path}")
-    path.parent.mkdir(parents=True, exist_ok=True)
+    if sidecar_path.exists():
+        raise FileExistsError(f"refusing to overwrite manifest digest sidecar: {sidecar_path}")
     manifest = ExperimentManifest(
         experiment_id="EXP-0001",
         run_id=run_id,
         phase="P1",
         status="RUNNING",
-        git_commit=_git_commit(),
+        git_commit=git_commit,
         dataset=DatasetRef(
             name="CLINC150",
             version="full",
             source="UCI 570 / clinc/oos-eval",
-            archive_sha256=archive_sha256,
-            canonical_sha256=canonical_sha256,
+            archive_sha256=EXP0001_ARCHIVE_SHA256,
+            canonical_sha256=EXP0001_CANONICAL_SHA256,
             label_provenance="published benchmark labels",
         ),
         model=ModelRef(
@@ -132,7 +123,16 @@ def _write_manifest(
         limitations=limitations,
         conclusion=None,
     )
-    path.write_text(manifest.model_dump_json(indent=2), encoding="utf-8")
+    payload = manifest.model_dump_json(indent=2)
+    manifest_sha256 = sha256_bytes(payload.encode("utf-8"))
+    write_text_atomic(path, payload)
+    write_manifest_sidecar(
+        manifest_path=path,
+        manifest_sha256=manifest_sha256,
+        artifact_name=artifact.name,
+        artifact_sha256=str(runtime["artifact_sha256"]),
+    )
+    return manifest_sha256
 
 
 def _run_one_seed(arguments: argparse.Namespace) -> None:
@@ -141,12 +141,16 @@ def _run_one_seed(arguments: argparse.Namespace) -> None:
     names = b2_run_artifacts(seed)
     artifact = arguments.output / "results" / names.result_name
     manifest_path = arguments.output / "manifests" / names.manifest_name
+    sidecar_path = sidecar_digest_path(manifest_path)
     if artifact.exists():
         raise FileExistsError(f"refusing to overwrite prediction artifact: {artifact}")
     if manifest_path.exists():
         raise FileExistsError(f"refusing to overwrite manifest: {manifest_path}")
+    if sidecar_path.exists():
+        raise FileExistsError(f"refusing to overwrite manifest digest sidecar: {sidecar_path}")
 
-    _verify_canonical_dataset(arguments.dataset, arguments.canonical_sha256)
+    git_commit = require_clean_git()
+    observed_canonical = verify_exp0001_canonical_dataset(arguments.dataset)
     payload = validate_clinc150_payload(json.loads(arguments.dataset.read_text(encoding="utf-8")))
     splits = validate_exp0001_splits(FrozenSplits.read(arguments.splits), payload)
     class_labels = in_scope_class_labels(payload["train"])
@@ -172,6 +176,7 @@ def _run_one_seed(arguments: argparse.Namespace) -> None:
     device = resolve_b2_device()
     dtype = "float16" if device.type == "cuda" else "float32"
     model, tokenizer = load_frozen_b2_model_and_tokenizer()
+    determinism = configure_b2_determinism(seed)
     parameter_count = count_parameters(model)
 
     train_started = time.perf_counter()
@@ -212,12 +217,24 @@ def _run_one_seed(arguments: argparse.Namespace) -> None:
         "parameter_count": parameter_count,
         "device": str(device),
         "dtype": dtype,
+        "cuda_used": device.type == "cuda",
+        "gpu_index": snapshot.get("gpu_index"),
+        "gpu_total_memory_bytes": snapshot.get("gpu_total_memory_bytes"),
+        "headline_hardware_qualification": snapshot["headline_hardware_qualification"],
+        "headline_hardware_assumption": snapshot["headline_hardware_assumption"],
         "batch_size": snapshot["batch_size"],
         "max_length": snapshot["max_length"],
         "cuda_version": snapshot["cuda_version"],
         "gpu_driver": snapshot["gpu_driver"],
         "mean_max_softmax": float(probabilities.max(axis=1).mean()),
-        "artifact_sha256": _hash_file(artifact),
+        "artifact_sha256": sha256_file(artifact),
+        "canonical_sha256_expected": EXP0001_CANONICAL_SHA256,
+        "canonical_sha256_observed": observed_canonical,
+        "canonical_sha256_verified": True,
+        "archive_sha256_expected": EXP0001_ARCHIVE_SHA256,
+        "archive_sha256_observed": None,
+        "archive_sha256_source": "freeze_declared_not_rehashed",
+        "git_dirty": False,
         **determinism,
         **train_info,
     }
@@ -227,6 +244,8 @@ def _run_one_seed(arguments: argparse.Namespace) -> None:
         "Raw softmax probabilities are not calibrated.",
         "B2 does not use calibration or final-test examples.",
         "GPU runs are not claimed to be bit-identical.",
+        "Headline hardware qualification is UNVERIFIED; CUDA is not RTX 4060-equivalent.",
+        "Archive SHA-256 is freeze-declared and was not re-hashed from a zip this run.",
     )
     if device.type != "cuda":
         limitations = (
@@ -238,12 +257,11 @@ def _run_one_seed(arguments: argparse.Namespace) -> None:
             *limitations,
             "torch.use_deterministic_algorithms(True) did not fully apply; see runtime.",
         )
-    _write_manifest(
+    manifest_sha256 = _write_manifest(
         path=manifest_path,
         run_id=names.run_id,
         seed=seed,
-        archive_sha256=arguments.archive_sha256,
-        canonical_sha256=arguments.canonical_sha256,
+        git_commit=git_commit,
         hardware=hardware,
         software_environment=software_environment,
         runtime=runtime,
@@ -253,38 +271,31 @@ def _run_one_seed(arguments: argparse.Namespace) -> None:
     print(f"run_id={names.run_id}")
     print(f"artifact={artifact}")
     print(f"manifest={manifest_path}")
+    print(f"manifest_sha256={manifest_sha256}")
     print(f"macro_f1={metrics.macro_f1}")
     print(f"accuracy={metrics.accuracy}")
     print(f"device={device}")
+    print(f"headline_hardware_qualification={snapshot['headline_hardware_qualification']}")
 
 
 def _aggregate(arguments: argparse.Namespace) -> None:
-    per_seed: dict[int, BaselineMetrics] = {}
-    for seed in B2_SEEDS:
-        names = b2_run_artifacts(seed)
-        artifact = arguments.output / "results" / names.result_name
-        if not artifact.exists():
-            raise FileNotFoundError(f"missing B2 artifact for seed {seed}: {artifact}")
-        _labels, _predictions, _probabilities, _class_labels, metrics = read_prediction_artifact(
-            artifact
-        )
-        per_seed[seed] = metrics
-    summary = aggregate_b2_metrics(per_seed)
+    summary = verified_b2_aggregate(arguments.output)
     summary_path = arguments.output / "manifests" / "EXP-0001-B2-validation-aggregate.json"
+    sidecar_path = sidecar_digest_path(summary_path)
     if summary_path.exists():
         raise FileExistsError(f"refusing to overwrite aggregate summary: {summary_path}")
-    summary_path.parent.mkdir(parents=True, exist_ok=True)
-    payload = {
-        "experiment_id": "EXP-0001",
-        "baseline": "B2",
-        "partition": B2_PARTITION,
-        "headline_rule": summary["headline_rule"],
-        "summary": summary,
-        "git_commit": _git_commit(),
-    }
-    summary_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    if sidecar_path.exists():
+        raise FileExistsError(f"refusing to overwrite aggregate digest sidecar: {sidecar_path}")
+    payload = json.dumps(summary, indent=2, sort_keys=True) + "\n"
+    write_text_atomic(summary_path, payload)
+    write_manifest_sidecar(
+        manifest_path=summary_path,
+        manifest_sha256=sha256_bytes(payload.encode("utf-8")),
+        artifact_name="EXP-0001-B2-validation-aggregate.json",
+        artifact_sha256=sha256_bytes(payload.encode("utf-8")),
+    )
     print(f"aggregate={summary_path}")
-    print(json.dumps(summary, indent=2, sort_keys=True))
+    print(json.dumps(summary["summary"], indent=2, sort_keys=True))
 
 
 def main() -> None:
@@ -292,19 +303,13 @@ def main() -> None:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--aggregate", action="store_true")
     parser.add_argument("--dataset", type=Path)
-    parser.add_argument("--archive-sha256")
-    parser.add_argument("--canonical-sha256")
     parser.add_argument("--splits", type=Path)
     parser.add_argument("--seed", type=int, choices=B2_SEEDS)
     arguments = parser.parse_args()
     if arguments.aggregate:
         _aggregate(arguments)
         return
-    missing = [
-        name
-        for name in ("dataset", "archive_sha256", "canonical_sha256", "splits", "seed")
-        if getattr(arguments, name) is None
-    ]
+    missing = [name for name in ("dataset", "splits", "seed") if getattr(arguments, name) is None]
     if missing:
         parser.error(f"the following arguments are required unless --aggregate: {missing}")
     _run_one_seed(arguments)

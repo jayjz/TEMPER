@@ -462,9 +462,16 @@ def collect_b2_hardware_software() -> dict[str, object]:
     gpu: str | None = "none"
     cuda_version: str | None = None
     gpu_driver: str | None = None
+    gpu_total_memory_bytes: int | None = None
+    gpu_index: int | None = None
     if torch.cuda.is_available():
         gpu = torch.cuda.get_device_name(0)
         cuda_version = getattr(torch.version, "cuda", None)
+        gpu_index = 0
+        try:
+            gpu_total_memory_bytes = int(torch.cuda.get_device_properties(0).total_memory)
+        except (AssertionError, OSError, RuntimeError):
+            gpu_total_memory_bytes = None
         try:
             with open("/proc/driver/nvidia/version", encoding="utf-8") as handle:
                 gpu_driver = handle.readline().strip() or None
@@ -479,6 +486,8 @@ def collect_b2_hardware_software() -> dict[str, object]:
         "ram_gb": ram_gb,
         "cuda_version": cuda_version,
         "gpu_driver": gpu_driver,
+        "gpu_index": gpu_index,
+        "gpu_total_memory_bytes": gpu_total_memory_bytes,
         "python": platform.python_version(),
         "torch": _package_version("torch"),
         "transformers": _package_version("transformers"),
@@ -486,9 +495,15 @@ def collect_b2_hardware_software() -> dict[str, object]:
         "numpy": _package_version("numpy"),
         "device": device,
         "dtype": dtype,
+        "cuda_used": device == "cuda",
         "batch_size": B2_BATCH_SIZE,
         "max_length": B2_MAX_LENGTH,
         "model_id": B2_MODEL_ID,
         "model_revision": B2_MODEL_REVISION,
         "tokenizer_revision": B2_TOKENIZER_REVISION,
+        "headline_hardware_qualification": "UNVERIFIED",
+        "headline_hardware_assumption": (
+            "RTX 4060-class 8 GB GPU; BERT-base; max_length 128; batch 16; fp16. "
+            "Not an automated hardware-equivalence test."
+        ),
     }

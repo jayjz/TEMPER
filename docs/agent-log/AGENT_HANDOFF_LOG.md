@@ -350,3 +350,77 @@ None generated. No `experiments/EXP-0001/data/` or `experiments/EXP-0001/output/
 ### Next handoff
 
 Run frozen B2 validation on hardware that satisfies the freeze without changing batch size, max length, precision, model, seeds, or splits. Preserve all three seeds. Do not access calibration or final test. Then independent Codex review of this implementation. Do not merge.
+
+---
+
+## 2026-09-17T01:31:39Z
+
+- agent/model = Grok
+- branch = `feat/exp-0001-b2-encoder`
+- starting commit = `1ff090491af3b81d194fcccc2727bb8675eea22b`
+- objective = Close EXP-0001 B2 provenance and evidence-integrity defects before official GPU runs. No B2 training. No scientific-freeze change.
+
+This turn is an implementation-hardening record. It is not a B2 research result.
+
+### Status labels
+
+- IMPLEMENTED: frozen dataset identity as code-controlled; B2 aggregate provenance verification; atomic prediction/manifest writes; sidecar digest contract; explicit `headline_hardware_qualification=UNVERIFIED`; dirty-git fail-closed for B2 execution; re-seed after model load.
+- OBSERVED: quality gates passed (69 tests); this sandbox still has no CUDA and was not used for B2 training.
+- UNVERIFIED: B2 validation metrics; Hub fetch of pinned BERT; whether the operator GPU fits the frozen batch/seq/fp16 config; operator-local B0/B1 artifacts.
+
+### Defects confirmed
+
+- P0-1 CONFIRMED: B2 (and B0/B1) treated `--canonical-sha256` as authoritative, so a modified dataset plus hash(modified) could pass.
+- P0-2 CONFIRMED: B2 `--aggregate` trusted seed `.npz` files and stored metrics without manifests, revision, dataset identity, or artifact hashes.
+- P1 durability CONFIRMED: `write_prediction_artifact` claimed atomicity but wrote in place; manifests had no SHA-256; freeze requires hashes of both artifact and manifest.
+- P1 hardware CONFIRMED: runtime did not distinguish headline qualification from "CUDA happened to be available."
+
+### Adjacent issues inspected
+
+- Test/calibration leakage in B2 command: not a defect. B2 still has no `--partition` and does not bind `payload["test"]` or `calibration_indices`.
+- Model init consuming RNG: addressed by seeding before and after `from_pretrained`.
+- Scheduler first-step LR=0 from PyTorch 2.x LambdaLR init: HuggingFace-compatible; not changed.
+- Dirty git HEAD: B2 execution now fails closed. Aggregate of already-written seeds does not require a clean tree.
+- B0/B1 still expose `--partition test` (pre-existing; out of B2 scope). B0/B1 still do not sidecar-digest or refuse dirty git.
+
+### Files changed
+
+- `src/temper/datasets/exp0001.py` (created): frozen archive/canonical SHA-256 and verifier
+- `src/temper/evidence/integrity.py` (created): hashing, atomic writes, sidecar digest, git cleanliness
+- `src/temper/baselines/b2_evidence.py` (created): fail-closed seed-bundle verification and aggregate
+- `src/temper/datasets/__init__.py`, `src/temper/evidence/__init__.py`
+- `src/temper/evaluation/baseline.py`: prediction artifacts written via temp+replace
+- `src/temper/baselines/encoder.py`: hardware qualification fields; no training-config change
+- `experiments/EXP-0001/run_b2.py`: remove caller hash flags; verify frozen canonical; sidecar; clean git
+- `experiments/EXP-0001/run_baselines.py`: caller hashes must match frozen identity; file bytes compared to frozen canonical
+- `tests/unit/test_b2_evidence.py` (created)
+- `tests/unit/test_b2_encoder.py`, `tests/unit/test_run_baselines_provenance.py`
+- `README.md` (CLI: no caller dataset hash)
+- `docs/agent-log/AGENT_HANDOFF_LOG.md` (appended)
+
+Unchanged source-of-truth: freeze, protocol, registry, thesis, roadmap, evaluation protocol, evidence policy, research questions, ADRs, frozen split JSON.
+
+### Evidence contract after this turn
+
+- Canonical dataset identity is `fb3217519e3c601c7a9b019dfd6744bed8f2564833e2b7eac4a406cacb462489`.
+- Archive identity `0d8ecc3e1edd7b25cabde0177544ce536ddf773844bc80ef1a75f36e7f030ea2` is freeze-declared; B2 does not re-hash a zip.
+- Prediction `.npz` SHA-256 lives in `runtime.artifact_sha256` (covers the artifact, not the manifest).
+- Manifest SHA-256 lives in sibling `<manifest>.sha256.json` (`temper.evidence.sidecar.v1`). The sidecar is not self-hashed.
+- Aggregate admits only seeds `{13,21,37}`, matching frozen BERT revision, frozen canonical hash, matching sidecar, and recomputed metrics. No best-seed headline.
+- `headline_hardware_qualification` is always `UNVERIFIED` in this freeze. CUDA is recorded factually and is not treated as RTX 4060-equivalent.
+
+### Quality gates
+
+- `uv run pytest` — 69 passed
+- `uv run ruff check .`
+- `uv run ruff format --check .`
+- `uv run mypy src`
+- `uv run bandit -r src` — no issues
+- `uv run pip-audit` — no known vulnerabilities
+- `git diff --check`
+
+No B2 training. No calibration or final-test access.
+
+### Next handoff
+
+Official B2 seeds 13, 21, 37 on freeze-satisfying GPU hardware, from a clean git tree, using the real canonical `data_full.json`. Do not change the freeze. Preserve every seed. Then independent Codex review. Do not merge.
